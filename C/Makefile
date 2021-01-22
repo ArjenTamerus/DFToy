@@ -6,15 +6,16 @@ INCFLAGS=-I/usr/include/ -I.
 LDFLAGS=-L. -Wl,-rpath=. -Bdynamic -llapack -lblas -lfftw3
 TARGET=.
 
-all: eigensolver eigensolver_complete eigensolver_sol2_sd eigensolver_sol3_p_sd eigensolver_sol3_cg eigensolver_sol4_p_cg
+#all: eigensolver eigensolver_complete eigensolver_sol2_sd eigensolver_sol3_p_sd eigensolver_sol3_cg eigensolver_sol4_p_cg
+all: eigensolver eigensolver_sol1
 
 eigensolver: lib
 	$(CC) ${INCFLAGS} -c eigensolver.c  $(ELEC)  -lm $(LDFLAGS)
 	$(F90) -o eigensolver eigensolver.o  $(ELEC)  -lm $(LDFLAGS)
 
 eigensolver_sol1: lib
-	$(CC) ${INCFLAGS} -c eigensolver.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -o eigensolver eigensolver.o  $(ELEC)  -lm $(LDFLAGS)
+	$(CC) ${INCFLAGS} -c eigensolver_solution1.c  $(ELEC)  -lm $(LDFLAGS)
+	$(F90) -o eigensolver_sol1 eigensolver_solution1.o  $(ELEC)  -lm $(LDFLAGS)
 
 eigensolver_sol2_sd: lib
 	$(CC) ${INCFLAGS} -c eigensolver_solution2_steepest_descent.c  $(ELEC)  -lm $(LDFLAGS)
