@@ -14,7 +14,7 @@ void orthonormalise       (int num_pw, int num_states, double *state);
 //void orthogonalise        (int num_pw, int num_states, double *state, double *ref_state);
 void orthogonalise        (int num_pw, int num_states, fftw_complex *state, fftw_complex *ref_state);
 void transform            (int num_pw, int num_states, double *state, double *transformation);
-void diagonalise          (int num_pw, int num_states, double *state, double *H_state, double *eigenvalues, double *rotation);
+void diagonalise          (int num_pw, int num_states, fftw_complex *state, fftw_complex *H_state, double *eigenvalues, fftw_complex *rotation);
 void precondition         (int num_pw, int num_states, fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic);
 void line_search          (int num_pw, int num_states, double *approx_state,
 		double *H_kinetic, double *H_nonlocal, double *direction,

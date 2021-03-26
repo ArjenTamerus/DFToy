@@ -112,10 +112,10 @@ int main(int argc, char **argv)
 	int     num_pw;           // no. plane waves
 	int     num_states;       // no. eigenstates req'd
 
-	double *trial_wvfn;       // current best guess at wvfn
-	double *gradient;         // gradient of energy
-	double *search_direction; // direction to search along
-	double *prev_search_direction; // last direction searched along (for CG)
+	fftw_complex *trial_wvfn;       // current best guess at wvfn
+	fftw_complex *gradient;         // gradient of energy
+	fftw_complex *search_direction; // direction to search along
+	fftw_complex *prev_search_direction; // last direction searched along (for CG)
 
 	double *eigenvalue;       // best guess at eigenvalues
 	double *products;         // dot products of current states
@@ -271,8 +271,6 @@ int main(int argc, char **argv)
 	// unconstrained, i.e. following this gradient will break orthonormality.
 	c_apply_H(num_pw,num_states,trial_wvfn,H_kinetic,H_local,gradient);
 
-	fftw_complex *c_trial_wvfn = trial_wvfn;
-	fftw_complex *c_gradient = gradient;
 	// Compute the eigenvalues, i.e. the Rayleigh quotient for each eigenpair
 	// Note that we don't compute a denominator here because our trial states
 	// are normalised.
@@ -285,7 +283,7 @@ int main(int argc, char **argv)
 			// NB the eigenvalue is the real part of the product, so we only compute that
 			//eigenvalue[nb] += creal(trial_wvfn[offset+2*i]*gradient[offset+2*i];
 			//eigenvalue[nb] += trial_wvfn[offset+2*i+1]*gradient[offset+2*i+1];
-			eigenvalue[nb] += creal(conj(c_trial_wvfn[offset+i])*c_gradient[offset+i]);
+			eigenvalue[nb] += creal(conj(trial_wvfn[offset+i])*gradient[offset+i]);
 		}
 	}
 
@@ -315,7 +313,7 @@ int main(int argc, char **argv)
 		orthogonalise(num_pw,num_states,gradient,trial_wvfn);
 
 		// The steepest descent search direction is minus the gradient
-		for (i=0;i<2*num_pw*num_states;i++) {
+		for (i=0;i<num_pw*num_states;i++) {
 			// cannot copy into prev_search_direction *here* because search_direction
 			// gets mangled inside the line_search function
 			search_direction[i] = -gradient[i];
@@ -326,7 +324,7 @@ int main(int argc, char **argv)
 
 		//* PRECON */
 		precondition(num_pw, num_states, search_direction, trial_wvfn, H_kinetic);
-		orthogonalise(num_pw,num_states,search_direction,trial_wvfn);
+		orthogonalise(num_pw, num_states, search_direction, trial_wvfn);
 
 		//Always calculate gT*g even on reset iteration - will need as gTxg_prev in
 		//next iteration
@@ -334,20 +332,18 @@ int main(int argc, char **argv)
 		gTxg = 0.0;
 
 		for(nb = 0; nb < num_states; nb++) {
-			offset = 2*nb*num_pw;
+			offset = nb*num_pw;
 			for(i=0; i < num_pw; i++) {
-				gTxg += search_direction[offset+2*i]*gradient[offset+2*i];
-				gTxg += search_direction[offset+2*i+1]*gradient[offset+2*i+1];
+				gTxg += creal(conj(search_direction[offset+i])*gradient[offset+i]);
 			}
 		}
 
 		if (reset_sd!=0) {
 			gamma = gTxg/gTxg_prev;
 			for (nb=0;nb<num_states;nb++) {
-				offset = 2*nb*num_pw;
+				offset = nb*num_pw;
 				for (i=0;i<num_pw;i++) {
-					search_direction[offset+2*i] += gamma*prev_search_direction[offset+2*i];
-					search_direction[offset+2*i+1] += gamma*prev_search_direction[offset+2*i+1];
+					search_direction[offset+i] += gamma*prev_search_direction[offset+i];
 				}
 			}
 
@@ -355,7 +351,7 @@ int main(int argc, char **argv)
 		}
 
 		gTxg_prev = gTxg;
-		for(i=0;i<2*num_pw*num_states;i++) { prev_search_direction[i] = search_direction[i]; }
+		for(i=0;i<num_pw*num_states;i++) { prev_search_direction[i] = search_direction[i]; }
 		// Search along this direction for the best approx. eigenvectors, i.e. the lowest energy.
 		line_search(num_pw,num_states,trial_wvfn,H_kinetic,H_local,search_direction,gradient,eigenvalue,&energy);
 
@@ -658,7 +654,7 @@ void precondition(int num_pw, int num_states, fftw_complex *search_direction, ff
 }
 
 
-void diagonalise(int num_pw,int num_states, double *state,double *H_state, double *eigenvalues, double *rotation) {
+void diagonalise(int num_pw,int num_states, fftw_complex *state, fftw_complex *H_state, double *eigenvalues, fftw_complex *rotation) {
 	/* |-------------------------------------------------|
 		 | This subroutine takes a set of states and       |
 		 | H acting on those states, and transforms the    |
@@ -676,21 +672,14 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 
 	// Compute the subspace H matrix and store in rotation array
 	for (nb2=0;nb2<num_states;nb2++) {
-		offset2 = 2*nb2*num_pw;
+		offset2 = nb2*num_pw;
 		for (nb1=0;nb1<num_states;nb1++) {
-			offset1 = 2*nb1*num_pw;
-			rotation[2*nb2*num_states+2*nb1]   = 0.0;
-			rotation[2*nb2*num_states+2*nb1+1] = 0.0;
+			offset1 = nb1*num_pw;
+			rotation[nb2*num_states+nb1] = (0.0+0.0*I);
 			for (i=0;i<num_pw;i++) {
+
 				// The complex dot-product a.b is conjg(a)*b
-
-				// First compute the real part of the subspace matrix and store in rotation
-				rotation[2*nb2*num_states+2*nb1] += state[offset1+2*i]*H_state[offset2+2*i];
-				rotation[2*nb2*num_states+2*nb1] += state[offset1+2*i+1]*H_state[offset2+2*i+1];
-
-				// Now compute the imaginary part of the subspace matrix and store in rotation
-				rotation[2*nb2*num_states+2*nb1+1] += state[offset1+2*i]*H_state[offset2+2*i+1];
-				rotation[2*nb2*num_states+2*nb1+1] -= state[offset1+2*i+1]*H_state[offset2+2*i];
+				rotation[nb2*num_states+nb1] += conj(state[offset1+i])*H_state[offset2+i];
 
 			}
 		}
