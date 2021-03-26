@@ -125,6 +125,89 @@ void diag_zheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	TRACEFFTW_FREE(full_H);
 }
 
+void diag_zheevr_a(int num_pw, int num_states, double *H_kinetic,double *H_local,double *full_eigenvalue)
+{
+	printf("LAPACK diagonaliser:  ZHEEVR\n");
+	fftw_complex *full_H;
+	fftw_complex *work;
+	double *rwork;
+	int *iwork;
+	int lwork, lrwork, liwork;
+	int i;
+	int status;
+	char jobz;
+	char uplo;
+
+	// First we allocate memory for and construct the full Hamiltonian
+	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+
+	construct_full_H(num_pw,H_kinetic,H_local,full_H);
+
+	// Use LAPACK to get eigenvalues and eigenvectors, e.g. the zheev routine
+	// NB H is Hermitian (but not packed)
+	jobz = 'V';
+	uplo = 'U';
+
+	char range = 'A'; // Only find IL-th through IU-th eigenvalues
+	int IL = 1;
+	int IU = num_states;
+
+	// range == I -> VL and BU are not referenced, so set to 0
+	double VL = 0.0;
+	double VU = 0.0;
+
+	// ABSTOL - need to figure out if we want to play with this, set to 0.0 (==
+	// default tolerance) for now
+	double abstol = 0.0;
+
+	// zheevr-specific out-params
+	// M-param
+	int eigenvals_found;
+
+	//int *isuppz = TRACECALLOC(2*(IU-IL+1), sizeof(int));
+	int *isuppz = TRACECALLOC(num_pw, sizeof(int));
+
+	// zheevr-specific arrays and descriptors
+	int ldZ = num_pw; // Some kind of aligment glitch?
+	fftw_complex *z_work = TRACEFFTW_MALLOC(ldZ*num_pw*sizeof(fftw_complex));
+
+	fftw_complex wsize;
+	double rwsize;
+	int iwsize;
+	lwork = lrwork = liwork = -1;
+
+	zheevr_(&jobz, &range, &uplo, &num_pw, full_H, &num_pw,
+			&VL, &VU, &IL, &IU, &abstol, &eigenvals_found, full_eigenvalue, z_work, &ldZ, isuppz,
+			&wsize, &lwork, &rwsize, &lrwork, &iwsize, &liwork,
+			&status);
+
+
+	lwork = (int)creal(wsize);
+	lrwork = (int)rwsize;
+	liwork = iwsize;
+
+	printf("YOYO %d %d %d\n", lwork, lrwork, liwork);
+
+	work = TRACEFFTW_MALLOC(lwork*sizeof(fftw_complex));
+
+	rwork = TRACECALLOC(lrwork,sizeof(double));
+
+	iwork = TRACECALLOC(liwork,sizeof(int));
+
+	zheevr_(&jobz, &range, &uplo, &num_pw, full_H, &num_pw,
+			&VL, &VU, &IL, &IU, &abstol, &eigenvals_found, full_eigenvalue, z_work, &ldZ, isuppz,
+			work, &lwork, rwork, &lrwork, iwork, &liwork,
+			&status);
+
+	// Deallocate memory
+	//TRACEFREE(rwork);
+	//TRACEFFTW_FREE(work);
+	//TRACEFREE(iwork);
+	//TRACEFFTW_FREE(z_work);
+	//TRACEFREE(isuppz);
+	//TRACEFFTW_FREE(full_H);
+}
+
 void diag_zheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
 	printf("LAPACK diagonaliser:  ZHEEVR\n");

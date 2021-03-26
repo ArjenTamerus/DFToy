@@ -137,7 +137,7 @@ int main(int argc, char **argv)
 	int    reset_sd = 0; // 0 means reset to steepest descent
 
 	// rotation returned by diagonalise
-	double *rotation;
+	fftw_complex *rotation;
 
 	// Timing variables
 	clock_t init_cpu_time,curr_cpu_time,exact_cpu_time,iter_cpu_time;
@@ -237,17 +237,16 @@ int main(int argc, char **argv)
 	// plane wave co-efficients for a single particle wavefunction and there
 	// are num_states particles.
 	//
-	// NB these are *complex* so need 2 "doubles" per element (one real, one imaginary)
-	trial_wvfn            = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
-	gradient              = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
-	search_direction      = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
-	prev_search_direction = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
+	trial_wvfn            = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
+	gradient              = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
+	search_direction      = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
+	prev_search_direction = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
 
 	// We have num_states eigenvalue estimates (real) and products (complex)
 	eigenvalue = (double *)TRACEMALLOC(num_states*sizeof(double));
 
 	// The rotation matrix (needed for diagonalisation)
-	rotation   = (double *)TRACEMALLOC(2*num_states*num_states*sizeof(double));
+	rotation   = (fftw_complex *)TRACEMALLOC(num_states*num_states*sizeof(double));
 
 	/* ----------------------------------------------------
 		 | Initialise the iterative search for the lowest     |
@@ -272,18 +271,21 @@ int main(int argc, char **argv)
 	// unconstrained, i.e. following this gradient will break orthonormality.
 	c_apply_H(num_pw,num_states,trial_wvfn,H_kinetic,H_local,gradient);
 
+	fftw_complex *c_trial_wvfn = trial_wvfn;
+	fftw_complex *c_gradient = gradient;
 	// Compute the eigenvalues, i.e. the Rayleigh quotient for each eigenpair
 	// Note that we don't compute a denominator here because our trial states
 	// are normalised.
 	int offset = 0;
 	for (nb=0;nb<num_states;nb++) {
-		offset = 2*nb*num_pw;
+		offset = nb*num_pw;
 		eigenvalue[nb] = 0.0;
 		for (i=0;i<num_pw;i++) {
 			// The complex dot-product is conjg(trial_wvfn)*gradient
 			// NB the eigenvalue is the real part of the product, so we only compute that
-			eigenvalue[nb] += trial_wvfn[offset+2*i]*gradient[offset+2*i];
-			eigenvalue[nb] += trial_wvfn[offset+2*i+1]*gradient[offset+2*i+1];
+			//eigenvalue[nb] += creal(trial_wvfn[offset+2*i]*gradient[offset+2*i];
+			//eigenvalue[nb] += trial_wvfn[offset+2*i+1]*gradient[offset+2*i+1];
+			eigenvalue[nb] += creal(conj(c_trial_wvfn[offset+i])*c_gradient[offset+i]);
 		}
 	}
 
@@ -524,103 +526,15 @@ void exact_diagonalisation(int num_pw, int num_states, double *H_kinetic, double
 			break;
 	};
 
-//	fftw_complex *full_H;
-//	fftw_complex *lapack_cmplx_work;
-//	double *lapack_real_work;
-//	int *lapack_int_work;
-//	int lapack_lwork, lapack_lrwork, lapack_liwork;
-//	int i;
-//	int status;
-//	char jobz;
-//	char uplo;
-//
-//	// First we allocate memory for and construct the full Hamiltonian
-//	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
-//
-//	my_construct_full_H(num_pw,H_kinetic,H_local,full_H);
-//
-//	//zheev
-//	//lapack_lwork = (2*num_pw)-1;
-//	//zheevd
-//	//lapack_lwork = 2*num_pw+num_pw*num_pw;
-//	//zheevr
-//	lapack_lwork = 2*num_pw; //TODO: lwork >= (NB+1*N) see docs for NB
-//	lapack_cmplx_work = TRACEFFTW_MALLOC(lapack_lwork*sizeof(fftw_complex));
-//
-//	//zheev
-//	//lapack_lrwork = (3*num_pw)-2;
-//	//zheevd
-//	//lapack_lrwork = 1+5*num_pw+2*num_pw*num_pw;
-//	//zheevr
-//	lapack_lrwork = 24*num_pw;
-//	lapack_real_work = TRACECALLOC(lapack_lrwork,sizeof(double));
-//
-//	//zheevd
-//	//lapack_liwork = 3+5*num_pw;
-//	//zheevr
-//	lapack_liwork = 10*num_pw;
-//	lapack_int_work = TRACECALLOC(lapack_liwork,sizeof(int));
-//
-//	// Use LAPACK to get eigenvalues and eigenvectors, e.g. the zheev routine
-//	// NB H is Hermitian (but not packed)
-//	jobz = 'V';
-//	uplo = 'U';
-//	//zheev_(&jobz, &uplo, &num_pw, full_H, &num_pw, full_eigenvalue, lapack_cmplx_work, &lapack_lwork, lapack_real_work, &status);
-//
-//	//zheevd_( &jobz, &uplo, &num_pw, full_H, &num_pw, full_eigenvalue,
-//	//		lapack_cmplx_work, &lapack_lwork, lapack_real_work, &lapack_lrwork,
-//	//		lapack_int_work, &lapack_liwork, &status);
-//
-//	// zheevr-specific in-params
-//
-//	char range = 'I'; // Only find IL-th through IU-th eigenvalues
-//	int IL = 1;
-//	int IU = num_states;
-//
-//	// range == I -> VL and BU are not referenced, so set to 0
-//	double VL = 0.0;
-//	double VU = 0.0;
-//
-//	// ABSTOL - need to figure out if we want to play with this, set to 0.0 (==
-//	// default tolerance) for now
-//	double abstol = 0.0;
-//
-//	// zheevr-specific out-params
-//	// M-param
-//	int eigenvals_found;
-//
-//	int *isuppz = TRACECALLOC(2*(IU-IL+1), sizeof(int));
-//
-//	// zheevr-specific arrays and descriptors
-//	int ldZ = num_pw;
-//	fftw_complex *lapack_z_work = TRACEFFTW_MALLOC(ldZ*sizeof(fftw_complex));
-//
-//	zheevr_(&jobz, &range, &uplo, &num_pw, full_H, &num_pw,
-//			&VL, &VU, &IL, &IU, &abstol, &eigenvals_found, full_eigenvalue, lapack_z_work, &ldZ, isuppz,
-//			lapack_cmplx_work, &lapack_lwork, lapack_real_work, &lapack_lrwork, lapack_int_work, &lapack_liwork,
-//			&status);
-//
-//	// Deallocate memory
-//	TRACEFREE(lapack_real_work);
-//	TRACEFFTW_FREE(lapack_cmplx_work);
-//	TRACEFREE(lapack_int_work);
-//	TRACEFFTW_FREE(lapack_z_work);
-//	TRACEFFTW_FREE(isuppz);
-//	TRACEFFTW_FREE(full_H);
-//
-//	return;
-
 }
 
-void orthogonalise(int num_pw,int num_states, double *state, double *ref_state) {
+void orthogonalise(int num_pw,int num_states, fftw_complex *state, fftw_complex *ref_state) {
 	/* |-------------------------------------------------|
 		 | This subroutine takes a set of states and       |
 		 | orthogonalises them to a set of reference       |
 		 | states.                                         |
 		 |-------------------------------------------------| */
-	char transA;
-	char transB;
-	double *overlap;
+	fftw_complex overlap;
 	int ref_state_offset;
 	int state_offset;
 	int nb1;
@@ -638,52 +552,40 @@ void orthogonalise(int num_pw,int num_states, double *state, double *ref_state) 
 		 |                                                                     |
 		 | Remove the overlapping parts of ref_state nb1 from state nb2        |
 		 |---------------------------------------------------------------------| */
-	overlap = TRACEMALLOC(2*sizeof(double));
 
 	for (nb2=0;nb2<num_states;nb2++) {
-		state_offset = 2*nb2*num_pw;
+		int state_offset = nb2*num_pw;
 		for (nb1=0;nb1<num_states;nb1++) {
-			ref_state_offset = 2*nb1*num_pw;
+			int ref_state_offset = nb1*num_pw;
 
-			overlap[0] = 0.0; //real
-			overlap[1] = 0.0; //cmplx
+			overlap = (0+0*I);
 
 			// Calculate overlap
 			// Dot. Prod. = SUM_i(cplx_conj(a)_i*b_i)
 			for (np=0; np < num_pw; np++) {
-				local_ref_state_offset = ref_state_offset+2*np;
-				local_state_offset = state_offset+2*np;
+				local_ref_state_offset = ref_state_offset+np;
+				local_state_offset = state_offset+np;
 
-				// real(overlap) = real(a)*real(b) + cmplx(a)*cmplx(b)
-				overlap[0] += ref_state[local_ref_state_offset]*state[local_state_offset];
-				overlap[0] += ref_state[local_ref_state_offset+1]*state[local_state_offset+1];
+				overlap += conj(ref_state[local_ref_state_offset])*state[local_state_offset];
 
-				// cmplx(overlap) = real(a)*cmplx(b) - cmplx(a)*real(b)
-				overlap[1] += ref_state[local_ref_state_offset]*state[local_state_offset+1];
-				overlap[1] -= ref_state[local_ref_state_offset+1]*state[local_state_offset];
 			}
 			
 			// remove overlap from state
 			for (np=0; np < num_pw; np++) {
-				local_ref_state_offset = ref_state_offset+2*np;
-				local_state_offset = state_offset+2*np;
+				local_ref_state_offset = ref_state_offset+np;
+				local_state_offset = state_offset+np;
 
-				// real part
-				state[local_state_offset] -= overlap[0]*ref_state[local_ref_state_offset] - overlap[1]*ref_state[local_ref_state_offset+1];
-				// cplx part
-				state[local_state_offset+1] -= overlap[0]*ref_state[local_ref_state_offset+1] + overlap[1]*ref_state[local_ref_state_offset];
+				state[local_state_offset] -= overlap*ref_state[local_ref_state_offset];
 			}
 		}
 	}
 
-	TRACEFREE(overlap);
-	overlap = NULL;
 
 	return;
 
 }
 
-void precondition(int num_pw,int num_states,double *search_direction,double *trial_wvfn,double *H_kinetic) {
+void precondition(int num_pw, int num_states, fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic) {
 	/* |-------------------------------------------------|
 		 | This subroutine takes a search direction and    |
 		 | applies a simple kinetic energy-based           |
@@ -694,6 +596,8 @@ void precondition(int num_pw,int num_states,double *search_direction,double *tri
 	int offset;
 	double kinetic_eigenvalue;
 	double x, tmp; 
+
+	//fftw_double *trial_wvfn = (fftw_complex *)trial_wvfn_d;
 
 	for (nb=0;nb<num_states;nb++) {
 		/* |---------------------------------------------------------------------|
@@ -714,12 +618,13 @@ void precondition(int num_pw,int num_states,double *search_direction,double *tri
 			 |                                                                     |
 			 |---------------------------------------------------------------------| */
 
-		offset = 2*nb*num_pw;
+		offset = nb*num_pw;
 		kinetic_eigenvalue = 0.0;
 
 		for (np=0;np<num_pw;np++) {
-			kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+2*np] * trial_wvfn[offset+2*np];
-			kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+2*np+1] * trial_wvfn[offset+2*np+1];
+			//kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+np] * trial_wvfn[offset+np];
+			kinetic_eigenvalue += H_kinetic[np] * creal(trial_wvfn[offset+np]) * creal(trial_wvfn[offset+np])+ H_kinetic[np] *cimag(trial_wvfn[offset+np]) * cimag(trial_wvfn[offset+np]);
+			//kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+np+1] * trial_wvfn[offset+2*np+1];
 		}
 		
 		for (np=0;np<num_pw;np++) {
@@ -740,9 +645,9 @@ void precondition(int num_pw,int num_states,double *search_direction,double *tri
 			tmp = 8.0 + x * (4.0 + x * (2.0 + x));
 
 			// real
-			search_direction[offset+2*np] *= tmp / (tmp + x*x*x*x);
+			search_direction[offset+np] *= tmp / (tmp + x*x*x*x);
 			// complex
-			search_direction[offset+2*np+1] *= tmp / (tmp + x*x*x*x);
+			//search_direction[offset+2*np+1] *= tmp / (tmp + x*x*x*x);
 
 
 		}
@@ -763,16 +668,11 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 	int optimal_size;
 	int offset1,offset2;
 
-	double *lapack_cmplx_work;
+	fftw_complex *lapack_cmplx_work;
 	double *lapack_real_work;
 	int lapack_lwork;
 	char jobz;
 	char uplo;
-
-
-	// Delete these lines once you've coded this subroutine
-	//mpi_printf(world_rank,"Subroutine diagonalise has not been written yet\n");
-	//exit(EXIT_FAILURE);
 
 	// Compute the subspace H matrix and store in rotation array
 	for (nb2=0;nb2<num_states;nb2++) {
@@ -804,7 +704,7 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 
 	lapack_lwork = 2*num_states-1;
 	lapack_real_work = TRACECALLOC((3*num_states-2),sizeof(double));
-	lapack_cmplx_work = TRACECALLOC(2*lapack_lwork,sizeof(double));
+	lapack_cmplx_work = TRACEFFTW_MALLOC(lapack_lwork*sizeof(fftw_complex));
 
 	jobz = 'V';
 	uplo = 'U';
@@ -814,7 +714,7 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 
 	// Deallocate workspace memory
 	TRACEFREE(lapack_real_work);
-	TRACEFREE(lapack_cmplx_work);
+	TRACEFFTW_FREE(lapack_cmplx_work);
 
 
 	// Finally apply the diagonalising rotation to state

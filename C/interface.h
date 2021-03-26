@@ -11,10 +11,11 @@ extern unsigned int seed;       // random number seed
 // Function prototypes
 void exact_diagonalisation(int num_pw, int num_states, double *H_kinetic, double *H_nonlocal, double *full_eigenvalue, int diag_mode);
 void orthonormalise       (int num_pw, int num_states, double *state);
-void orthogonalise        (int num_pw, int num_states, double *state, double *ref_state);
+//void orthogonalise        (int num_pw, int num_states, double *state, double *ref_state);
+void orthogonalise        (int num_pw, int num_states, fftw_complex *state, fftw_complex *ref_state);
 void transform            (int num_pw, int num_states, double *state, double *transformation);
 void diagonalise          (int num_pw, int num_states, double *state, double *H_state, double *eigenvalues, double *rotation);
-void precondition         (int num_pw, int num_states, double *search_direction, double *trial_wvfn, double *H_kinetic);
+void precondition         (int num_pw, int num_states, fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic);
 void line_search          (int num_pw, int num_states, double *approx_state,
 		double *H_kinetic, double *H_nonlocal, double *direction,
 		double *gradient,  double *eigenvalue, double *energy);
@@ -23,7 +24,7 @@ void output_results(int num_pw, int num_states, double* H_local,
 
 // LAPACK function prototypes
 void   zheev_(char *jobz, char *uplo, int *N, fftw_complex *A, int *ldA, double *w,
-		fftw_complex *cwork, int *lwork, double *work, int *status); 
+		fftw_complex *work, int *lwork, double *rwork, int *status); 
 
 void zheevd_(char *jobz, char *uplo, int *N, fftw_complex *A, int *LDA, double *W,
 		fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *iwork,
@@ -67,3 +68,62 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 void diag_pzheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eigenvalue);
 void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,double *full_eigenvalue);
 #endif
+//void orthogonalise(int num_pw,int num_states, fftw_complex *state, fftw_complex *ref_state) {
+//	/* |-------------------------------------------------|
+//		 | This subroutine takes a set of states and       |
+//		 | orthogonalises them to a set of reference       |
+//		 | states.                                         |
+//		 |-------------------------------------------------| */
+//	char transA;
+//	char transB;
+//	fftw_complex overlap;
+//	int ref_state_offset;
+//	int state_offset;
+//	int nb1;
+//	int nb2;
+//	int np;
+//
+//	int local_ref_state_offset;
+//	int local_state_offset;
+//
+//	/* |---------------------------------------------------------------------|
+//		 | You need to:                                                        |
+//		 |                                                                     |
+//		 | Compute the overlap of ref_state nb1 with state nb2                 |
+//		 | (use the generalised "dot product" for complex vectors)             |
+//		 |                                                                     |
+//		 | Remove the overlapping parts of ref_state nb1 from state nb2        |
+//		 |---------------------------------------------------------------------| */
+//
+//	for (nb2=0;nb2<num_states;nb2++) {
+//		int state_offset = nb2*num_pw;
+//		for (nb1=0;nb1<num_states;nb1++) {
+//			int ref_state_offset = nb1*num_pw;
+//
+//			overlap = (0+0*I);
+//
+//			// Calculate overlap
+//			// Dot. Prod. = SUM_i(cplx_conj(a)_i*b_i)
+//			for (np=0; np < num_pw; np++) {
+//				local_ref_state_offset = ref_state_offset+np;
+//				local_state_offset = state_offset+np;
+//
+//				overlap += conj(ref_state[local_ref_state_offset])*state[local_state_offset];
+//
+//			}
+//			
+//			//ref_state_offset = 2*nb1*num_pw;
+//			// remove overlap from state
+//			for (np=0; np < num_pw; np++) {
+//				local_ref_state_offset = ref_state_offset+np;
+//				local_state_offset = state_offset+np;
+//
+//				state[local_state_offset] -= overlap*ref_state[local_ref_state_offset];
+//			}
+//		}
+//	}
+//
+//
+//	return;
+//
+//}
