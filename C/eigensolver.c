@@ -72,41 +72,42 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
-#include <hamiltonian.h>
+#include <complex.h>
+#include <mpi.h>
 #include <fftw3.h>
+#include "interface.h"
+#include "trace.h"
 
-// Global variables
-double trial_step = 0.4; // step for line search
-unsigned int seed;       // random number seed
+#include <stdarg.h>
 
-// Function prototypes
-void exact_diagonalisation(int num_pw, double *H_kinetic, double *H_nonlocal, double *full_eigenvalue);
-void orthonormalise       (int num_pw, int num_states, double *state);
-void orthogonalise        (int num_pw, int num_states, double *state, double *ref_state);
-void transform            (int num_pw, int num_states, double *state, double *transformation);
-void diagonalise          (int num_pw, int num_states, double *state, double *H_state, double *eigenvalues, double *rotation);
-void precondition         (int num_pw, int num_states, double *search_direction, double *trial_wvfn, double *H_kinetic);
-void line_search          (int num_pw, int num_states, double *approx_state,
-		double *H_kinetic, double *H_nonlocal, double *direction,
-		double *gradient,  double *eigenvalue, double *energy);
-void output_results(int num_pw, int num_states, double* H_local,
-		double* wvfn);
+// MPI variables
+int world_size, world_rank;
 
-// LAPACK function prototypes
-void   zheev_(char *jobz, char *uplo, int *N, double *A, int *ldA, double *w,
-		double *cwork, int *lwork, double *work, int *status); 
-void   zpotrf_(char *uplo, int *N,double *A,int *lda,int *status);
-void   ztrtri_(char *uplo, char *jobz, int *N, double *A,int *lda, int *status);
+void mpi_printf(int comm_rank, const char *format, ...)
+{
+	int status = 0;
+	va_list myargs;
+
+	if(0 == comm_rank) {
+		va_start(myargs, format);
+		status = vprintf(format, myargs);
+		va_end(myargs);
+	}
+
+	return status;
+}
+
 
 // Main program unit
-int main() {
+int main(int argc, char **argv)
+{
 
 	/* ----------------------------------------------------
 		 | Declare variables                                |
 		 ---------------------------------------------------- */
 
-	double *H_kinetic;        // the kinetic energy operator
-	double *H_local;          // the local potential operator
+	//double *H_kinetic;        // the kinetic energy operator
+	//double *H_local;          // the local potential operator
 	int     num_wavevectors;  // no. wavevectors in the basis
 	int     num_pw;           // no. plane waves
 	int     num_states;       // no. eigenstates req'd
@@ -144,21 +145,41 @@ int main() {
 	/* ---------------------
 		 | Initialise system |
 		 --------------------*/
+	// MPI standard stuff
+	MPI_Init(&argc, &argv);
+	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
 	// No. nonzero wavevectors "G" in our wavefunction expansion
 	num_wavevectors = 100;
+
+	// No. eigenstates to compute
+	num_states = 1;
+
+	// Update num_wavevectors and num_states from cmd line
+	// Don't care about error handling
+	// Just read `./eigensolver [num_wavevectors [num_states]]
+	// TODO MPI-ify
+	mpi_printf(world_rank,"CMD: %s", argv[0]);
+	if (argc > 1) {
+		mpi_printf(world_rank," %s", argv[1]);
+		num_wavevectors = (int) strtol(argv[1], NULL, 10);
+	}
+	if (argc > 2) {
+		mpi_printf(world_rank," %s", argv[2]);
+		num_states = (int) strtol(argv[2], NULL, 10);
+	}
+	mpi_printf(world_rank,"\n");
 
 	// No. plane-waves in our wavefunction expansion. One plane-wave has
 	// wavevector 0, and for all the others there are plane-waves at +/- G
 	num_pw = 2*num_wavevectors+1;
 
-	// No. eigenstates to compute
-	num_states = 5;
-
 	// Catch any nonsensical combinations of parameters
 	if (num_states>=num_pw) {
-		printf("'Error, num_states must be less than num_pw\n'");
-		exit(EXIT_FAILURE);
+		mpi_printf(world_rank,"Error, num_states must be less than num_pw\n");
+		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+		//exit(EXIT_FAILURE);
 	} 
 
 	// Set tolerance on the eigenvalue sum when using an iterative search. 
@@ -169,7 +190,7 @@ int main() {
 	// Initialise random number generator
 	c_init_random_seed();
 
-	printf("Initialising Hamiltonian...\n");
+	mpi_printf(world_rank,"Initialising Hamiltonian...\n");
 
 	// Initialise and build the Hamiltonian, comprising two terms: the kinetic energy,
 	// which is a diagonal matrix in the plane-wave basis (Fourier space); and the local
@@ -177,34 +198,39 @@ int main() {
 	//
 	// The Hamiltonian is built inside libhamiltonian by populating these two arrays.
 	// NB these arrays are *real* (not complex)
-	H_kinetic  = (double *)malloc(num_pw*sizeof(double));  
-	H_local = (double *)malloc(num_pw*sizeof(double));
+	H_kinetic  = (double *)TRACEMALLOC(num_pw*sizeof(double));  
+	H_local = (double *)TRACEMALLOC(num_pw*sizeof(double));
 	c_init_H(num_pw,H_kinetic,H_local);
 
 	/* ----------------------------------------------------
 		 | Perform full diagonalisation using LAPACK.       |
 		 | You will need to complete the function called    |
 		 ---------------------------------------------------- */
-	printf("Starting full diagonalisation...\n\n");
+	RESET_MEMSTATS();
+	mpi_printf(world_rank,"Starting full diagonalisation...\n\n");
 
 	init_cpu_time    = clock();
-	full_eigenvalue = (double *)malloc(num_pw*sizeof(double));
-	exact_diagonalisation(num_pw,H_kinetic,H_local,full_eigenvalue);
+	full_eigenvalue = (double *)TRACEMALLOC(num_pw*sizeof(double));
+	int diag_mode = get_diag_mode();
+	exact_diagonalisation(num_pw, num_states, H_kinetic,H_local,full_eigenvalue, diag_mode);
 	curr_cpu_time    = clock();
 
 	exact_cpu_time = curr_cpu_time-init_cpu_time;
 
-	printf(" State         Eigenvalue\n");
+	mpi_printf(world_rank," State         Eigenvalue\n");
 	for (nb=0;nb<num_states;nb++) {
-		printf("     %d % #19.10g\n",1+nb,full_eigenvalue[nb]);
+		mpi_printf(world_rank,"     %d % #19.10g\n",1+nb,full_eigenvalue[nb]);
 	}
 
 	// Energy is the sum of the eigenvalues of the occupied states
 	exact_energy = 0.0;
 	for (nb=0;nb<num_states;nb++) { exact_energy += full_eigenvalue[nb]; }
-	printf("Ground state energy: % #16.10g\n",exact_energy);
+	mpi_printf(world_rank,"Ground state energy: % #16.10g\n",exact_energy);
 
-	printf("Full diagonalisation took %f secs\n\n",(double)exact_cpu_time/(double)CLOCKS_PER_SEC);
+	mpi_printf(world_rank,"Full diagonalisation took %f secs\n\n",(double)exact_cpu_time/(double)CLOCKS_PER_SEC);
+
+	report_mem_stats();
+	RESET_MEMSTATS();
 
 	// Allocate memory for iterative eigenvector search. Each of the following
 	// are stored in column-major (Fortran) order. Each column contains the 
@@ -212,25 +238,25 @@ int main() {
 	// are num_states particles.
 	//
 	// NB these are *complex* so need 2 "doubles" per element (one real, one imaginary)
-	trial_wvfn            = (double *)malloc(2*num_pw*num_states*sizeof(double));
-	gradient              = (double *)malloc(2*num_pw*num_states*sizeof(double));
-	search_direction      = (double *)malloc(2*num_pw*num_states*sizeof(double));
-	prev_search_direction = (double *)malloc(2*num_pw*num_states*sizeof(double));
+	trial_wvfn            = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
+	gradient              = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
+	search_direction      = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
+	prev_search_direction = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
 
 	// We have num_states eigenvalue estimates (real) and products (complex)
-	eigenvalue = (double *)malloc(num_states*sizeof(double));
+	eigenvalue = (double *)TRACEMALLOC(num_states*sizeof(double));
 
 	// The rotation matrix (needed for diagonalisation)
-	rotation   = (double *)malloc(2*num_states*num_states*sizeof(double));
+	rotation   = (double *)TRACEMALLOC(2*num_states*num_states*sizeof(double));
 
 	/* ----------------------------------------------------
 		 | Initialise the iterative search for the lowest     |
 		 | num_states eigenvalues.                            |
 		 ---------------------------------------------------- */
-	printf("Starting iterative search for eigenvalues\n\n");
-	printf("+-----------+----------------+-----------------+\n");
-	printf("| iteration |     energy     |  energy change  |\n");
-	printf("+-----------+----------------+-----------------+\n");
+	mpi_printf(world_rank,"Starting iterative search for eigenvalues\n\n");
+	mpi_printf(world_rank,"+-----------+----------------+-----------------+\n");
+	mpi_printf(world_rank,"| iteration |     energy     |  energy change  |\n");
+	mpi_printf(world_rank,"+-----------+----------------+-----------------+\n");
 
 	init_cpu_time = clock();
 
@@ -265,7 +291,7 @@ int main() {
 	energy = 0.0;
 	for (nb=0;nb<num_states;nb++) { energy += eigenvalue[nb]; }
 
-	printf("|  Initial  | % #14.8g |                 |\n",energy);
+	mpi_printf(world_rank,"|  Initial  | % #14.8g |                 |\n",energy);
 
 	// In case of problems, we cap the total number of iterations
 	max_iter = 40000;
@@ -315,7 +341,6 @@ int main() {
 
 		if (reset_sd!=0) {
 			gamma = gTxg/gTxg_prev;
-			//for (i=0;i<2*num_pw*num_states;i++) {
 			for (nb=0;nb<num_states;nb++) {
 				offset = 2*nb*num_pw;
 				for (i=0;i<num_pw;i++) {
@@ -334,14 +359,14 @@ int main() {
 
 		// Check convergence
 		if(fabs(prev_energy-energy)<energy_tol) {
-			printf("+-----------+----------------+-----------------+\n");
-			printf("Eigenvalues converged\n");
+			mpi_printf(world_rank,"+-----------+----------------+-----------------+\n");
+			mpi_printf(world_rank,"Eigenvalues converged\n");
 			break;
 		}
 		if(fabs(prev_energy-energy)<energy_tol) {
 			if(reset_sd==0){
-				printf("+-----------+----------------+-----------------+\n");
-				printf("Eigenvalues converged\n");
+				mpi_printf(world_rank,"+-----------+----------------+-----------------+\n");
+				mpi_printf(world_rank,"Eigenvalues converged\n");
 				break;
 			} else {
 				reset_sd = 0;
@@ -355,7 +380,7 @@ int main() {
 		// Energy is the sum of the eigenvalues
 		energy = 0.0;
 		for (nb=0;nb<num_states;nb++) { energy += eigenvalue[nb]; }
-		printf("|     %4d  | % #14.8g |  % #14.8g |\n",iter,energy,prev_energy-energy); 
+		mpi_printf(world_rank,"|     %4d  | % #14.8g |  % #14.8g |\n",iter,energy,prev_energy-energy); 
 
 	}   // end of main iterative loop
 
@@ -363,7 +388,7 @@ int main() {
 
 	iter_cpu_time = curr_cpu_time-init_cpu_time;
 
-	printf("Iterative search took %e secs\n\n",(double)(iter_cpu_time)/(double)CLOCKS_PER_SEC);
+	mpi_printf(world_rank,"Iterative search took %e secs\n\n",(double)(iter_cpu_time)/(double)CLOCKS_PER_SEC);
 
 	/* If you have multiple states, you may get a linear combination of them rather than the
 		 pure states. This can be fixed by computing the Hamiltonian matrix in the basis of the
@@ -375,31 +400,36 @@ int main() {
 
 	 diagonalise(num_pw,num_states,trial_wvfn,gradient,eigenvalue,rotation);
 
+	report_mem_stats();
+
 
 	// Finally summarise the results - we renumber the states to start at 1
-	printf("=============== FINAL RESULTS ===============\n");
-	printf("State                     Eigenvalue         \n");
-	printf("                Iterative            Exact   \n");
+	mpi_printf(world_rank,"=============== FINAL RESULTS ===============\n");
+	mpi_printf(world_rank,"State                     Eigenvalue         \n");
+	mpi_printf(world_rank,"                Iterative            Exact   \n");
 	for (nb=0;nb<num_states;nb++) {
-		printf("   %d   % #18.8g  % #18.8g \n",1+nb,eigenvalue[nb],full_eigenvalue[nb]);
+		mpi_printf(world_rank,"   %d   % #18.8g  % #18.8g \n",1+nb,eigenvalue[nb],full_eigenvalue[nb]);
 	}
 
-	printf("---------------------------------------------\n");
-	printf("Energy % #18.8g  % #18.8g\n\n",energy,exact_energy);
-	printf("---------------------------------------------\n");
-	printf("Time taken (s) % 10.5g      % 10.5g\n",(double)(iter_cpu_time)/(double)(CLOCKS_PER_SEC),
+	mpi_printf(world_rank,"---------------------------------------------\n");
+	mpi_printf(world_rank,"Energy % #18.8g  % #18.8g\n\n",energy,exact_energy);
+	mpi_printf(world_rank,"---------------------------------------------\n");
+	mpi_printf(world_rank,"Time taken (s) % 10.5g      % 10.5g\n",(double)(iter_cpu_time)/(double)(CLOCKS_PER_SEC),
 			(double)(exact_cpu_time)/(double)(CLOCKS_PER_SEC));
-	printf("=============================================\n\n");
+	mpi_printf(world_rank,"=============================================\n\n");
 
 	output_results(num_pw, num_states, H_local, trial_wvfn);
 
 	// Release memory
-	free(H_kinetic);
-	free(H_local);
-	free(full_eigenvalue);
-	free(trial_wvfn);
-	free(gradient);
-	free(search_direction);
+	TRACEFREE(H_kinetic);
+	TRACEFREE(H_local);
+	TRACEFREE(full_eigenvalue);
+	TRACEFREE(trial_wvfn);
+	TRACEFREE(gradient);
+	TRACEFREE(search_direction);
+
+	// Your standard MPI goodbye
+	MPI_Finalize();
 
 	exit(EXIT_SUCCESS);
 
@@ -407,47 +437,180 @@ int main() {
 
 
 // -- YOU WILL NEED TO FINISH THESE FUNCTIONS --
+//
+//void my_construct_full_H(int num_pw, double *H_kinetic, double *H_local, fftw_complex *full_H)
+//{
+//	fftw_complex *tmp_state1, *tmp_state2;
+//	fftw_plan plan_forward, plan_backward;
+//	int np1, np2;
+//
+//	//memset(full_H, num_pw*num_pw*sizeof(fftw_complex), 0);	
+//	for (np1 = 0; np1 < num_pw*num_pw; np1++) {
+//		full_H[np1] = (0+0*I);
+//	}
+//
+//	tmp_state1 = TRACEFFTW_MALLOC(num_pw*sizeof(fftw_complex));
+//	tmp_state2 = TRACEFFTW_MALLOC(num_pw*sizeof(fftw_complex));
+//	//memset(tmp_state2, num_pw*sizeof(fftw_complex), 0);	
+//	for (np1 = 0; np1 < num_pw; np1++) {
+//		tmp_state2[np1] = (0+0*I);
+//	}
+//
+//	plan_forward = fftw_plan_dft_1d(num_pw, tmp_state1, tmp_state2, FFTW_FORWARD, FFTW_ESTIMATE);
+//	plan_backward = fftw_plan_dft_1d(num_pw, tmp_state1, tmp_state2, FFTW_BACKWARD, FFTW_ESTIMATE);
+//
+//	for(np1 = 0; np1 < num_pw; np1++) {
+//		//memset(tmp_state1, num_pw*sizeof(fftw_complex), 0);	
+//		for (np2 = 0; np2 < num_pw; np2++) {
+//			tmp_state1[np2] = (0+0*I);
+//		}
+//		tmp_state1[np1] = (1+0*I);
+//
+//		fftw_execute_dft(plan_forward, tmp_state1, tmp_state2);
+//
+//		for(np2 = 0; np2 < num_pw; np2++)
+//		{
+//			tmp_state2[np2] = H_local[np2]*tmp_state2[np2]/(((double)1.0)*num_pw);
+//		}
+//
+//		fftw_execute_dft(plan_backward, tmp_state2, tmp_state1);
+//
+//		for(np2 = 0; np2 < num_pw; np2++)
+//		{
+//			full_H[np1*num_pw + np2] = tmp_state1[np2];
+//		}
+//	}
+//
+//	fftw_destroy_plan(plan_forward);
+//	fftw_destroy_plan(plan_backward);
+//
+//	TRACEFFTW_FREE(tmp_state1);
+//	TRACEFFTW_FREE(tmp_state2);
+//
+//	// Add contribution from kinetic term
+//	for(int i=1;i<num_pw;i++) {
+//		full_H[i*num_pw+i] += (H_kinetic[i]+0i);
+//	}
+//}
 
-void exact_diagonalisation(int num_pw,double *H_kinetic,double *H_local,double *full_eigenvalue) {
+void exact_diagonalisation(int num_pw, int num_states, double *H_kinetic, double *H_local, double *full_eigenvalue, int diag_mode) {
 	/* |-------------------------------------------------|
 		 | This subroutine takes a compact representation  |
 		 | of the matrix H, constructs the full H, and     |
 		 | diagonalises to get the whole eigenspectrum.    |
 		 |-------------------------------------------------| */
-	double *full_H;
-	double *lapack_cmplx_work;
-	double *lapack_real_work;
-	int lapack_lwork;
-	int i;
-	int status;
-	char jobz;
-	char uplo;
 
-	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (double *)malloc(2*num_pw*num_pw*sizeof(double));
+	switch (diag_mode) {
+		case 0:
+			diag_zheev(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 1:
+			diag_zheevd(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 2:
+			diag_zheevr(num_pw, num_states, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 3:
+			diag_pzheev(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 4:
+			diag_pzheevd(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 5:
+			diag_pzheevr(num_pw, num_states, H_kinetic, H_local, full_eigenvalue);
+			break;
+		default:
+			diag_zheev(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+	};
 
-	// This routine is in libhamiltonian
-	c_construct_full_H(num_pw,H_kinetic,H_local,full_H);
-
-	lapack_real_work = calloc((3*num_pw)-2,sizeof(double));
-
-	lapack_lwork = (2*num_pw)-1;
-	lapack_cmplx_work = calloc(lapack_lwork*2,sizeof(double));
-	// Use LAPACK to get eigenvalues and eigenvectors, e.g. the zheev routine
-	// NB H is Hermitian (but not packed)
-	jobz = 'V';
-	uplo = 'U';
-	zheev_(&jobz, &uplo, &num_pw, full_H, &num_pw, full_eigenvalue, lapack_cmplx_work, &lapack_lwork, lapack_real_work, &status);
-
-	// Deallocate memory
-	free(lapack_real_work);
-	free(lapack_cmplx_work);
-	free(full_H);
-
-	return;
+//	fftw_complex *full_H;
+//	fftw_complex *lapack_cmplx_work;
+//	double *lapack_real_work;
+//	int *lapack_int_work;
+//	int lapack_lwork, lapack_lrwork, lapack_liwork;
+//	int i;
+//	int status;
+//	char jobz;
+//	char uplo;
+//
+//	// First we allocate memory for and construct the full Hamiltonian
+//	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+//
+//	my_construct_full_H(num_pw,H_kinetic,H_local,full_H);
+//
+//	//zheev
+//	//lapack_lwork = (2*num_pw)-1;
+//	//zheevd
+//	//lapack_lwork = 2*num_pw+num_pw*num_pw;
+//	//zheevr
+//	lapack_lwork = 2*num_pw; //TODO: lwork >= (NB+1*N) see docs for NB
+//	lapack_cmplx_work = TRACEFFTW_MALLOC(lapack_lwork*sizeof(fftw_complex));
+//
+//	//zheev
+//	//lapack_lrwork = (3*num_pw)-2;
+//	//zheevd
+//	//lapack_lrwork = 1+5*num_pw+2*num_pw*num_pw;
+//	//zheevr
+//	lapack_lrwork = 24*num_pw;
+//	lapack_real_work = TRACECALLOC(lapack_lrwork,sizeof(double));
+//
+//	//zheevd
+//	//lapack_liwork = 3+5*num_pw;
+//	//zheevr
+//	lapack_liwork = 10*num_pw;
+//	lapack_int_work = TRACECALLOC(lapack_liwork,sizeof(int));
+//
+//	// Use LAPACK to get eigenvalues and eigenvectors, e.g. the zheev routine
+//	// NB H is Hermitian (but not packed)
+//	jobz = 'V';
+//	uplo = 'U';
+//	//zheev_(&jobz, &uplo, &num_pw, full_H, &num_pw, full_eigenvalue, lapack_cmplx_work, &lapack_lwork, lapack_real_work, &status);
+//
+//	//zheevd_( &jobz, &uplo, &num_pw, full_H, &num_pw, full_eigenvalue,
+//	//		lapack_cmplx_work, &lapack_lwork, lapack_real_work, &lapack_lrwork,
+//	//		lapack_int_work, &lapack_liwork, &status);
+//
+//	// zheevr-specific in-params
+//
+//	char range = 'I'; // Only find IL-th through IU-th eigenvalues
+//	int IL = 1;
+//	int IU = num_states;
+//
+//	// range == I -> VL and BU are not referenced, so set to 0
+//	double VL = 0.0;
+//	double VU = 0.0;
+//
+//	// ABSTOL - need to figure out if we want to play with this, set to 0.0 (==
+//	// default tolerance) for now
+//	double abstol = 0.0;
+//
+//	// zheevr-specific out-params
+//	// M-param
+//	int eigenvals_found;
+//
+//	int *isuppz = TRACECALLOC(2*(IU-IL+1), sizeof(int));
+//
+//	// zheevr-specific arrays and descriptors
+//	int ldZ = num_pw;
+//	fftw_complex *lapack_z_work = TRACEFFTW_MALLOC(ldZ*sizeof(fftw_complex));
+//
+//	zheevr_(&jobz, &range, &uplo, &num_pw, full_H, &num_pw,
+//			&VL, &VU, &IL, &IU, &abstol, &eigenvals_found, full_eigenvalue, lapack_z_work, &ldZ, isuppz,
+//			lapack_cmplx_work, &lapack_lwork, lapack_real_work, &lapack_lrwork, lapack_int_work, &lapack_liwork,
+//			&status);
+//
+//	// Deallocate memory
+//	TRACEFREE(lapack_real_work);
+//	TRACEFFTW_FREE(lapack_cmplx_work);
+//	TRACEFREE(lapack_int_work);
+//	TRACEFFTW_FREE(lapack_z_work);
+//	TRACEFFTW_FREE(isuppz);
+//	TRACEFFTW_FREE(full_H);
+//
+//	return;
 
 }
-
 
 void orthogonalise(int num_pw,int num_states, double *state, double *ref_state) {
 	/* |-------------------------------------------------|
@@ -475,7 +638,7 @@ void orthogonalise(int num_pw,int num_states, double *state, double *ref_state) 
 		 |                                                                     |
 		 | Remove the overlapping parts of ref_state nb1 from state nb2        |
 		 |---------------------------------------------------------------------| */
-	overlap = malloc(2*sizeof(double));
+	overlap = TRACEMALLOC(2*sizeof(double));
 
 	for (nb2=0;nb2<num_states;nb2++) {
 		state_offset = 2*nb2*num_pw;
@@ -513,7 +676,7 @@ void orthogonalise(int num_pw,int num_states, double *state, double *ref_state) 
 		}
 	}
 
-	free(overlap);
+	TRACEFREE(overlap);
 	overlap = NULL;
 
 	return;
@@ -608,7 +771,7 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 
 
 	// Delete these lines once you've coded this subroutine
-	//printf("Subroutine diagonalise has not been written yet\n");
+	//mpi_printf(world_rank,"Subroutine diagonalise has not been written yet\n");
 	//exit(EXIT_FAILURE);
 
 	// Compute the subspace H matrix and store in rotation array
@@ -640,8 +803,8 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 	// Diagonalise to get eigenvectors and eigenvalues
 
 	lapack_lwork = 2*num_states-1;
-	lapack_real_work = calloc((3*num_states-2),sizeof(double));
-	lapack_cmplx_work = calloc(2*lapack_lwork,sizeof(double));
+	lapack_real_work = TRACECALLOC((3*num_states-2),sizeof(double));
+	lapack_cmplx_work = TRACECALLOC(2*lapack_lwork,sizeof(double));
 
 	jobz = 'V';
 	uplo = 'U';
@@ -650,8 +813,8 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 	// NB H is Hermitian                                               
 
 	// Deallocate workspace memory
-	free(lapack_real_work);
-	free(lapack_cmplx_work);
+	TRACEFREE(lapack_real_work);
+	TRACEFREE(lapack_cmplx_work);
 
 
 	// Finally apply the diagonalising rotation to state
@@ -678,7 +841,7 @@ void orthonormalise(int num_pw,int num_states,double *state) {
 	int    status;
 	int    offset1,offset2;
 
-	overlap = (double *)malloc(2*num_states*num_states*sizeof(double));
+	overlap = (double *)TRACEMALLOC(2*num_states*num_states*sizeof(double));
 
 	// Compute the overlap matrix (using 1D storage)
 	for (nb2=0;nb2<num_states;nb2++) {
@@ -708,7 +871,7 @@ void orthonormalise(int num_pw,int num_states,double *state) {
 	char uplo='U';
 	zpotrf_(&uplo,&num_states,overlap,&num_states,&status);
 	if ( status != 0 ) { 
-		printf("zpotrf failed in orthonormalise\n");
+		mpi_printf(world_rank,"zpotrf failed in orthonormalise\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -716,7 +879,7 @@ void orthonormalise(int num_pw,int num_states,double *state) {
 	char jobz='N';
 	ztrtri_(&uplo,&jobz,&num_states,overlap,&num_states,&status);
 	if(status!=0) {
-		printf("ztrtri failed in orthonormalise\n");
+		mpi_printf(world_rank,"ztrtri failed in orthonormalise\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -731,7 +894,7 @@ void orthonormalise(int num_pw,int num_states,double *state) {
 	// overlap array now contains the (upper triangular) orthonormalising transformation
 	transform(num_pw,num_states,state,overlap);
 
-	free(overlap);
+	TRACEFREE(overlap);
 
 	return;
 
@@ -746,7 +909,7 @@ void transform(int num_pw,int num_states,double *state,double *transformation) {
 	int offset1,offset2;
 	double *new_state;
 
-	new_state=(double *)malloc(2*num_pw*num_states*sizeof(double));
+	new_state=(double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
 
 	// Apply transformation to state and H_state
 	for (i=0;i<2*num_pw*num_states;i++) { new_state[i] = 0.0; }
@@ -771,11 +934,11 @@ void transform(int num_pw,int num_states,double *state,double *transformation) {
 
 	for (i=0;i<2*num_pw*num_states;i++) {state[i] = new_state[i];}
 
-	free(new_state);
+	TRACEFREE(new_state);
 
 	return;
 
-}    
+}
 
 
 void line_search(int num_pw,int num_states,double *approx_state,
@@ -835,7 +998,7 @@ void line_search(int num_pw,int num_states,double *approx_state,
 		denergy_dstep += 2.0*tmp_sum;
 	}
 
-	tmp_state = (double *)malloc(2*num_pw*num_states*sizeof(double));
+	tmp_state = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
 
 	best_step   = 0.0;
 	best_energy = *energy;
@@ -898,7 +1061,7 @@ void line_search(int num_pw,int num_states,double *approx_state,
 
 	if(d2E_dstep2<0.0) {
 		// Parabolic fit gives a maximum, so no good
-		printf("** Warning, parabolic stationary point is a maximum **\n");
+		mpi_printf(world_rank,"** Warning, parabolic stationary point is a maximum **\n");
 
 		if(tmp_energy<*energy) {
 			opt_step = step;
@@ -968,19 +1131,19 @@ void line_search(int num_pw,int num_states,double *approx_state,
 				*energy += tmp_sum;
 			}
 		} else {
-			printf("Oh dear: %f\n",best_step);
-			printf("Problem with line search\n");
+			mpi_printf(world_rank,"Oh dear: %f\n",best_step);
+			mpi_printf(world_rank,"Problem with line search\n");
 			exit(EXIT_FAILURE);
 		}
 	}
 
 
-	//       printf(" %f %d %f <- test2\n",opt_step,step,energy);
+	//       mpi_printf(world_rank," %f %d %f <- test2\n",opt_step,step,energy);
 
 	// We'll use this step as the basis of our trial step next time
 	// trial_step = 2*opt_step;
 
-	free(tmp_state);
+	TRACEFREE(tmp_state);
 	return;
 
 }
@@ -997,8 +1160,8 @@ void output_results(int num_pw, int num_states, double* H_local,
 	fclose(potential);
 
 	fftw_complex* realspace_wvfn =
-		(fftw_complex*)fftw_malloc(num_pw * sizeof(fftw_complex));
-	fftw_complex* tmp_wvfn = (fftw_complex*)fftw_malloc(num_pw * sizeof(fftw_complex));
+		(fftw_complex*)TRACEFFTW_MALLOC(num_pw * sizeof(fftw_complex));
+	fftw_complex* tmp_wvfn = (fftw_complex*)TRACEFFTW_MALLOC(num_pw * sizeof(fftw_complex));
 
 	fftw_plan plan =
 		fftw_plan_dft_1d(num_pw, tmp_wvfn, realspace_wvfn, FFTW_FORWARD, FFTW_ESTIMATE);
@@ -1015,12 +1178,12 @@ void output_results(int num_pw, int num_states, double* H_local,
 
 		for (int np = 0; np < num_pw; ++np) {
 			fprintf(wvfn_file, "%.12g\t%.12g\n", np / (double)(num_pw),
-					realspace_wvfn[np][0]);
+					creal(realspace_wvfn[np]));
 		}
 
 		fclose(wvfn_file);
 	}
 	fftw_destroy_plan(plan);
-	fftw_free(realspace_wvfn);
-	fftw_free(tmp_wvfn);
+	TRACEFFTW_FREE(realspace_wvfn);
+	TRACEFFTW_FREE(tmp_wvfn);
 }

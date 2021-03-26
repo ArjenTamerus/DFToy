@@ -1,50 +1,38 @@
 # Lines for GNU
-CC=gcc
-F90=gfortran
-ELEC=-lhamiltonian
-INCFLAGS=-I/usr/include/ -I.
-LDFLAGS=-L. -Wl,-rpath=. -Bdynamic -llapack -lblas -lfftw3
+OMPI_CC=gcc
+CC=mpicc -g
+#LAPACKLIBS=-llapack -lblas
+LAPACKLIBS= -lscalapack -lopenblas -lgfortran
+#LAPACKLIBS=`pkg-config --libs mkl-dynamic-lp64-seq`
+#LAPACKLIBS=-DMKL_ILP64 -I/opt/intel/mkl/include -L/opt/intel/mkl/lib/intel64 -lmkl_scalapack_lp64 -Wl,--no-as-needed -lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core -lmkl_blacs_intelmpi_lp64 -lgomp -lpthread -lm -ldl
+LIBS=-lhamiltonian $(LAPACKLIBS) -lfftw3 -lm
+INCFLAGS=-I/home/at748/fftw/a/include/ -I/usr/include/ -I.
+LDFLAGS= -L/home/at748/fftw/a/lib -L. -Wl,-rpath=. -Bdynamic $(LIBS)
+#LDFLAGS=-L/home/at748/fftw/a/lib -L. -Wl,-rpath=. -Bdynamic -DMKL_LP64 -I/opt/intel/mkl/include -L/opt/intel/mkl/lib/intel64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl -lfftw3
 TARGET=.
 
-#all: eigensolver eigensolver_complete eigensolver_sol2_sd eigensolver_sol3_p_sd eigensolver_sol3_cg eigensolver_sol4_p_cg
-all: eigensolver eigensolver_sol3_p_sd eigensolver_sol3_cg eigensolver_sol4_p_cg eigensolver_complete
+NTASKS?=1
+TOYCODE_DIAG?=PZHEEV
+
+all: eigensolver 
+	echo "libs:" $(LIBS)
 
 eigensolver: lib
-	$(CC) -O3 ${INCFLAGS} -c eigensolver.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -O3  -o eigensolver eigensolver.o  $(ELEC)  -lm $(LDFLAGS)
+	$(CC) -g -O3 ${INCFLAGS} -c eigensolver.c  $(LIBS) $(LDFLAGS)
+	$(CC) -g -O3  -o eigensolver eigensolver.o  $(LIBS) $(LDFLAGS)
 
-eigensolver_sol1: lib
-	$(CC) ${INCFLAGS} -c eigensolver_solution1.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -o eigensolver_sol1 eigensolver_solution1.o  $(ELEC)  -lm $(LDFLAGS)
-
-eigensolver_sol2_sd: lib
-	$(CC) ${INCFLAGS} -pg -c eigensolver_solution2_steepest_descent.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -pg -o eigensolver_sol2_sd eigensolver_solution2_steepest_descent.o  $(ELEC)  -lm $(LDFLAGS)
-
-eigensolver_sol3_p_sd: lib
-	$(CC) ${INCFLAGS} -c eigensolver_solution3_precondition_steepest_descent.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -o eigensolver_sol3_p_sd eigensolver_solution3_precondition_steepest_descent.o  $(ELEC)  -lm $(LDFLAGS)
-
-eigensolver_sol3_cg: lib
-	$(CC) ${INCFLAGS} -c eigensolver_solution3_conjugate_gradient.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -o eigensolver_sol3_cg eigensolver_solution3_conjugate_gradient.o  $(ELEC)  -lm $(LDFLAGS)
-
-eigensolver_sol4_p_cg: lib
-	$(CC) ${INCFLAGS} -c eigensolver_solution4_precondition_conjugate_gradient.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -o eigensolver_sol4_p_cg eigensolver_solution4_precondition_conjugate_gradient.o  $(ELEC)  -lm $(LDFLAGS)
-
-eigensolver_complete: lib
-	$(CC) ${INCFLAGS} -g -c eigensolver_complete.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -g -o eigensolver_complete eigensolver_complete.o  $(ELEC)  -lm $(LDFLAGS)
-
-lib: hamiltonian.f90
-	$(F90) ${INCFLAGS}  $(LDFLAGS) -c -fPIC hamiltonian.f90 -lfftw3
-	$(CC)  ${INCFLAGS}  $(LDFLAGS) -c -fPIC c_interface.c
-	ar r libhamiltonian.a c_interface.o hamiltonian.o
+lib:
+	$(CC) -g  ${INCFLAGS}  $(LDFLAGS) -c -fPIC c_interface.c
+	$(CC) -g  ${INCFLAGS}  $(LDFLAGS) -c -fPIC trace.c
+	$(CC) -g  ${INCFLAGS}  $(LDFLAGS) -c -fPIC diag.c
+	ar r libhamiltonian.a c_interface.o trace.o diag.o
 	ranlib libhamiltonian.a
-	$(F90)   $(LDFLAGS) -shared -Wl,-soname,libhamiltonian.so -o libhamiltonian.so c_interface.o  hamiltonian.o -lfftw3
+	$(CC) -g   $(LDFLAGS) -shared -Wl,-soname,libhamiltonian.so -o libhamiltonian.so c_interface.o trace.o diag.o
 
 clean:
 	rm -f *.a *.o *.mod *.so
 	rm eigensolver
+
+run:
+	TOYCODE_DIAG=$(TOYCODE_DIAG) mpirun -np $(NTASKS) --oversubscribe ./eigensolver
 
