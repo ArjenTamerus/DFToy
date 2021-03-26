@@ -7,19 +7,19 @@ LDFLAGS=-L. -Wl,-rpath=. -Bdynamic -llapack -lblas -lfftw3
 TARGET=.
 
 #all: eigensolver eigensolver_complete eigensolver_sol2_sd eigensolver_sol3_p_sd eigensolver_sol3_cg eigensolver_sol4_p_cg
-all: eigensolver eigensolver_sol1
+all: eigensolver eigensolver_sol3_p_sd eigensolver_sol3_cg eigensolver_sol4_p_cg eigensolver_complete
 
 eigensolver: lib
-	$(CC) ${INCFLAGS} -c eigensolver.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -o eigensolver eigensolver.o  $(ELEC)  -lm $(LDFLAGS)
+	$(CC) -O3 ${INCFLAGS} -c eigensolver.c  $(ELEC)  -lm $(LDFLAGS)
+	$(F90) -O3  -o eigensolver eigensolver.o  $(ELEC)  -lm $(LDFLAGS)
 
 eigensolver_sol1: lib
 	$(CC) ${INCFLAGS} -c eigensolver_solution1.c  $(ELEC)  -lm $(LDFLAGS)
 	$(F90) -o eigensolver_sol1 eigensolver_solution1.o  $(ELEC)  -lm $(LDFLAGS)
 
 eigensolver_sol2_sd: lib
-	$(CC) ${INCFLAGS} -c eigensolver_solution2_steepest_descent.c  $(ELEC)  -lm $(LDFLAGS)
-	$(F90) -o eigensolver_sol2_sd eigensolver_solution2_steepest_descent.o  $(ELEC)  -lm $(LDFLAGS)
+	$(CC) ${INCFLAGS} -pg -c eigensolver_solution2_steepest_descent.c  $(ELEC)  -lm $(LDFLAGS)
+	$(F90) -pg -o eigensolver_sol2_sd eigensolver_solution2_steepest_descent.o  $(ELEC)  -lm $(LDFLAGS)
 
 eigensolver_sol3_p_sd: lib
 	$(CC) ${INCFLAGS} -c eigensolver_solution3_precondition_steepest_descent.c  $(ELEC)  -lm $(LDFLAGS)

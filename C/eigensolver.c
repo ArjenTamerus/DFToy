@@ -146,14 +146,14 @@ int main() {
 		 --------------------*/
 
 	// No. nonzero wavevectors "G" in our wavefunction expansion
-	num_wavevectors = 1;
+	num_wavevectors = 100;
 
 	// No. plane-waves in our wavefunction expansion. One plane-wave has
 	// wavevector 0, and for all the others there are plane-waves at +/- G
 	num_pw = 2*num_wavevectors+1;
 
 	// No. eigenstates to compute
-	num_states = 1;
+	num_states = 5;
 
 	// Catch any nonsensical combinations of parameters
 	if (num_states>=num_pw) {
@@ -273,6 +273,8 @@ int main() {
 	/* ----------------------------------------------------
 		 | Begin the iterative search for eigenvalues         |
 		 ---------------------------------------------------- */
+	int CG_RESET=5;
+	double gamma, gTxg=0.0, gTxg_prev=1.0;
 
 	for (iter=1;iter<=max_iter;iter++) {
 
@@ -285,19 +287,70 @@ int main() {
 		orthogonalise(num_pw,num_states,gradient,trial_wvfn);
 
 		// The steepest descent search direction is minus the gradient
-		for (i=0;i<2*num_pw*num_states;i++) { search_direction[i] = -gradient[i]; }
+		for (i=0;i<2*num_pw*num_states;i++) {
+			// cannot copy into prev_search_direction *here* because search_direction
+			// gets mangled inside the line_search function
+			search_direction[i] = -gradient[i];
+		}
 
 		// Any modifications to the search direction go here, e.g.
 		// preconditioning, implementation of conjugate gradients etc.
 
+		//* PRECON */
+		precondition(num_pw, num_states, search_direction, trial_wvfn, H_kinetic);
+		orthogonalise(num_pw,num_states,search_direction,trial_wvfn);
+
+		//Always calculate gT*g even on reset iteration - will need as gTxg_prev in
+		//next iteration
+		//gTxg_prev = gTxg;
+		gTxg = 0.0;
+
+		for(nb = 0; nb < num_states; nb++) {
+			offset = 2*nb*num_pw;
+			for(i=0; i < num_pw; i++) {
+				gTxg += search_direction[offset+2*i]*gradient[offset+2*i];
+				gTxg += search_direction[offset+2*i+1]*gradient[offset+2*i+1];
+			}
+		}
+
+		if (reset_sd!=0) {
+			gamma = gTxg/gTxg_prev;
+			//for (i=0;i<2*num_pw*num_states;i++) {
+			for (nb=0;nb<num_states;nb++) {
+				offset = 2*nb*num_pw;
+				for (i=0;i<num_pw;i++) {
+					search_direction[offset+2*i] += gamma*prev_search_direction[offset+2*i];
+					search_direction[offset+2*i+1] += gamma*prev_search_direction[offset+2*i+1];
+				}
+			}
+
+			orthogonalise(num_pw,num_states,search_direction,trial_wvfn);
+		}
+
+		gTxg_prev = gTxg;
+		for(i=0;i<2*num_pw*num_states;i++) { prev_search_direction[i] = search_direction[i]; }
 		// Search along this direction for the best approx. eigenvectors, i.e. the lowest energy.
 		line_search(num_pw,num_states,trial_wvfn,H_kinetic,H_local,search_direction,gradient,eigenvalue,&energy);
 
 		// Check convergence
 		if(fabs(prev_energy-energy)<energy_tol) {
+			printf("+-----------+----------------+-----------------+\n");
 			printf("Eigenvalues converged\n");
 			break;
 		}
+		if(fabs(prev_energy-energy)<energy_tol) {
+			if(reset_sd==0){
+				printf("+-----------+----------------+-----------------+\n");
+				printf("Eigenvalues converged\n");
+				break;
+			} else {
+				reset_sd = 0;
+			}
+		} else {
+			reset_sd = 1;
+		}
+		// Reset the CG every 5 steps, to prevent it stagnating
+		//if (iter%CG_RESET==0) reset_sd = 1;
 
 		// Energy is the sum of the eigenvalues
 		energy = 0.0;
@@ -320,7 +373,7 @@ int main() {
 
 		 This can be done in the "diagonalise" routine, BUT YOU NEED TO COMPLETE IT            */
 
-	// diagonalise(num_pw,num_states,trial_wvfn,gradient,eigenvalue,rotation);
+	 diagonalise(num_pw,num_states,trial_wvfn,gradient,eigenvalue,rotation);
 
 
 	// Finally summarise the results - we renumber the states to start at 1
@@ -405,15 +458,14 @@ void orthogonalise(int num_pw,int num_states, double *state, double *ref_state) 
 	char transA;
 	char transB;
 	double *overlap;
-	int offset1;
-	int offset2;
+	int ref_state_offset;
+	int state_offset;
 	int nb1;
 	int nb2;
 	int np;
 
-	// Delete these lines once you've coded this subroutine
-	printf("Subroutine orthogonalise has not been written yet\n");
-	exit(EXIT_FAILURE);
+	int local_ref_state_offset;
+	int local_state_offset;
 
 	/* |---------------------------------------------------------------------|
 		 | You need to:                                                        |
@@ -423,6 +475,46 @@ void orthogonalise(int num_pw,int num_states, double *state, double *ref_state) 
 		 |                                                                     |
 		 | Remove the overlapping parts of ref_state nb1 from state nb2        |
 		 |---------------------------------------------------------------------| */
+	overlap = malloc(2*sizeof(double));
+
+	for (nb2=0;nb2<num_states;nb2++) {
+		state_offset = 2*nb2*num_pw;
+		for (nb1=0;nb1<num_states;nb1++) {
+			ref_state_offset = 2*nb1*num_pw;
+
+			overlap[0] = 0.0; //real
+			overlap[1] = 0.0; //cmplx
+
+			// Calculate overlap
+			// Dot. Prod. = SUM_i(cplx_conj(a)_i*b_i)
+			for (np=0; np < num_pw; np++) {
+				local_ref_state_offset = ref_state_offset+2*np;
+				local_state_offset = state_offset+2*np;
+
+				// real(overlap) = real(a)*real(b) + cmplx(a)*cmplx(b)
+				overlap[0] += ref_state[local_ref_state_offset]*state[local_state_offset];
+				overlap[0] += ref_state[local_ref_state_offset+1]*state[local_state_offset+1];
+
+				// cmplx(overlap) = real(a)*cmplx(b) - cmplx(a)*real(b)
+				overlap[1] += ref_state[local_ref_state_offset]*state[local_state_offset+1];
+				overlap[1] -= ref_state[local_ref_state_offset+1]*state[local_state_offset];
+			}
+			
+			// remove overlap from state
+			for (np=0; np < num_pw; np++) {
+				local_ref_state_offset = ref_state_offset+2*np;
+				local_state_offset = state_offset+2*np;
+
+				// real part
+				state[local_state_offset] -= overlap[0]*ref_state[local_ref_state_offset] - overlap[1]*ref_state[local_ref_state_offset+1];
+				// cplx part
+				state[local_state_offset+1] -= overlap[0]*ref_state[local_ref_state_offset+1] + overlap[1]*ref_state[local_ref_state_offset];
+			}
+		}
+	}
+
+	free(overlap);
+	overlap = NULL;
 
 	return;
 
@@ -438,10 +530,7 @@ void precondition(int num_pw,int num_states,double *search_direction,double *tri
 	int np,nb;
 	int offset;
 	double kinetic_eigenvalue;
-
-	// Delete these lines once you've coded this subroutine
-	printf("Subroutine precondition has not been written yet\n");
-	exit(EXIT_FAILURE);
+	double x, tmp; 
 
 	for (nb=0;nb<num_states;nb++) {
 		/* |---------------------------------------------------------------------|
@@ -461,12 +550,37 @@ void precondition(int num_pw,int num_states,double *search_direction,double *tri
 			 |     (H_kinetic trial_wvfn)(n) = H_kinetic(n)*trial_wvfn(n)          |
 			 |                                                                     |
 			 |---------------------------------------------------------------------| */
+
+		offset = 2*nb*num_pw;
+		kinetic_eigenvalue = 0.0;
+
+		for (np=0;np<num_pw;np++) {
+			kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+2*np] * trial_wvfn[offset+2*np];
+			kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+2*np+1] * trial_wvfn[offset+2*np+1];
+		}
+		
 		for (np=0;np<num_pw;np++) {
 			/* |---------------------------------------------------------------------|
 				 | You need to compute and apply the preconditioning, using the        |
 				 | estimate of trial_wvfn's kinetic energy computed above and the      |
 				 | kinetic energy associated with each plane-wave basis function       |
 				 |---------------------------------------------------------------------| */
+
+			// x = H_kin/E_kin
+			x = H_kinetic[np] / kinetic_eigenvalue;
+
+			// apply f(x) - keeping in mind search_direction is complex
+			// f(x) = (8+4x+2x^2+x^3)/(8+4x+2x^2+x^3+x^4)
+			// = (8+4x+2x^2+x^3)/(8+4x+2x^2+x^3)*x^4)
+			//
+			// 8+4x+2x^2+x^3 = 8 + x * (4+ x * (2 + x ))
+			tmp = 8.0 + x * (4.0 + x * (2.0 + x));
+
+			// real
+			search_direction[offset+2*np] *= tmp / (tmp + x*x*x*x);
+			// complex
+			search_direction[offset+2*np+1] *= tmp / (tmp + x*x*x*x);
+
 
 		}
 	}
@@ -494,8 +608,8 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 
 
 	// Delete these lines once you've coded this subroutine
-	printf("Subroutine diagonalise has not been written yet\n");
-	exit(EXIT_FAILURE);
+	//printf("Subroutine diagonalise has not been written yet\n");
+	//exit(EXIT_FAILURE);
 
 	// Compute the subspace H matrix and store in rotation array
 	for (nb2=0;nb2<num_states;nb2++) {
@@ -525,12 +639,19 @@ void diagonalise(int num_pw,int num_states, double *state,double *H_state, doubl
 
 	// Diagonalise to get eigenvectors and eigenvalues
 
-	// zero the work array
+	lapack_lwork = 2*num_states-1;
+	lapack_real_work = calloc((3*num_states-2),sizeof(double));
+	lapack_cmplx_work = calloc(2*lapack_lwork,sizeof(double));
 
+	jobz = 'V';
+	uplo = 'U';
+	zheev_(&jobz, &uplo, &num_states, rotation, &num_states, eigenvalues, lapack_cmplx_work, &lapack_lwork, lapack_real_work, &status);
 	// Use LAPACK to diagonalise the H in this subspace
 	// NB H is Hermitian                                               
 
 	// Deallocate workspace memory
+	free(lapack_real_work);
+	free(lapack_cmplx_work);
 
 
 	// Finally apply the diagonalising rotation to state
