@@ -186,8 +186,6 @@ void diag_zheevr_a(int num_pw, int num_states, double *H_kinetic,double *H_local
 	lrwork = (int)rwsize;
 	liwork = iwsize;
 
-	printf("YOYO %d %d %d\n", lwork, lrwork, liwork);
-
 	work = TRACEFFTW_MALLOC(lwork*sizeof(fftw_complex));
 
 	rwork = TRACECALLOC(lrwork,sizeof(double));
@@ -200,12 +198,13 @@ void diag_zheevr_a(int num_pw, int num_states, double *H_kinetic,double *H_local
 			&status);
 
 	// Deallocate memory
-	//TRACEFREE(rwork);
-	//TRACEFFTW_FREE(work);
-	//TRACEFREE(iwork);
-	//TRACEFFTW_FREE(z_work);
-	//TRACEFREE(isuppz);
-	//TRACEFFTW_FREE(full_H);
+	TRACEFREE(rwork);
+	TRACEFREE(iwork);
+	TRACEFREE(isuppz);
+
+	TRACEFFTW_FREE(work);
+	TRACEFFTW_FREE(z_work);
+	TRACEFFTW_FREE(full_H);
 }
 
 void diag_zheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,double *full_eigenvalue)
@@ -303,7 +302,6 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 
 
 	Cblacs_pinfo(&blacs_rank, &blacs_size);
-	//fprintf(stderr, "HI!@%d/%d-%d/%d\n", world_rank, world_size, blacs_rank, blacs_size);
 	MPI_Dims_create(blacs_size, 2, dims);
 
 	int nprow, npcol, myprow, mypcol;
@@ -314,7 +312,6 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	Cblacs_gridinit(&blacs_ctxt, &cbgi_r, nprow, npcol);
 	Cblacs_gridinit(&blacs_ctxt_root, &cbgi_r, 1, 1);
 	Cblacs_gridinfo(blacs_ctxt, &nprow, &npcol, &myprow, &mypcol);
-	fprintf(stderr, "HI!@%d/%d-%d/%d\n", myprow, nprow, mypcol, npcol);
 
 	//MB = num_pw/nprow;
 	int NB = num_pw/nprow;
@@ -335,7 +332,6 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	}
 
 	fftw_complex *A = TRACEMALLOC((MLOC_A)*NLOC_A*sizeof(fftw_complex));
-	//fftw_complex *Z = NULL; // only used if getting eigenvectors as well
 	fftw_complex *Z = TRACEMALLOC((MLOC_A)*NLOC_A*sizeof(fftw_complex));
 
 	// distribute full matrix (from root) to local submatrices
@@ -345,19 +341,13 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	int NP0 = numroc_(&num_pw, &MB, &zero, &zero, &nprow);
 	int NQ0 = numroc_(&num_pw, &MB, &zero, &zero, &npcol); // num_pw always >= 2 and >= NB
 
-	//// eigenvalues only
-	////int max = NB*(NP0+1) > 3 ? NB*(NP0+1): 3;
-	////lwork = max + 3*num_pw;
-	//// eigenvalues + eigenvectors
+	// eigenvalues + eigenvectors
 	lwork = (NP0+NQ0+NB)*NB + 3*num_pw + num_pw*num_pw;
 	work = TRACEFFTW_MALLOC(lwork*sizeof(fftw_complex));
 
-	//// values
-	////lrwork = 2*num_pw;
-	//// values + vectors
+	// values + vectors
 	lrwork = 2*(num_pw+num_pw)-2;
 	rwork = TRACECALLOC(lrwork,sizeof(double));
-	printf("Pre-query: %d\t%d\n", lwork, lrwork);
 
 	//lwork = -1; lrwork = -1;
 	//fftw_complex wsize;
@@ -367,17 +357,21 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	jobz = 'V';
 	uplo = 'U';
 
+	// NOTE: PZHEEV workspace query is broken in Netlib Scalapack <= 2.1
+
+	//// Workspace query
 	//pzheev_(&jobz, &uplo, &num_pw, A, &one, &one, desc, full_eigenvalue, Z, &one, &one, desc, &wsize, &lwork, &rwsize, &lrwork, &status);
 	//printf("Work Query results A: %f+%fi\t%f\n", creal(wsize), cimag(wsize), rwsize);
 
+	//// Allocate work arrays to recommended size
 	//lwork = (int)creal(wsize);
 	//lrwork = (int)rwsize;
 
-	////lwork = wsize;
 	//work = TRACEFFTW_MALLOC(lwork*sizeof(fftw_complex));
-
-	//////lrwork = rwsize;
 	//rwork = TRACECALLOC(lrwork,sizeof(double));
+	
+
+	// Actual work
 	pzheev_(&jobz, &uplo, &num_pw, A, &one, &one, desc, full_eigenvalue, Z, &one, &one, desc, work, &lwork, rwork, &lrwork, &status);
 
 	//// Deallocate memory
@@ -426,14 +420,12 @@ void diag_pzheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eig
 	Cblacs_gridinit(&blacs_ctxt, &cbgi_r, nprow, npcol);
 	Cblacs_gridinit(&blacs_ctxt_root, &cbgi_r, 1, 1);
 	Cblacs_gridinfo(blacs_ctxt, &nprow, &npcol, &myprow, &mypcol);
-	fprintf(stderr, "HI!@%d/%d-%d/%d\n", myprow, nprow, mypcol, npcol);
 
 	//MB = num_pw/nprow;
 	int NB = num_pw/nprow;
 	int MB = NB;//num_pw/nprow;
 	int NLOC_A = numroc_(&num_pw, &NB, &mypcol, &zero, &npcol);
 	int MLOC_A = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
-	printf("[%d] LOCS: %d %d \n", world_rank, MLOC_A, NLOC_A);
 
 	int LDA = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
 	LDA = LDA < 1 ? 1 : LDA;
@@ -447,54 +439,38 @@ void diag_pzheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eig
 	}
 
 	fftw_complex *A = TRACEMALLOC((MLOC_A)*NLOC_A*sizeof(fftw_complex));
-	//fftw_complex *Z = NULL; // only used if getting eigenvectors as well
 	fftw_complex *Z = TRACEMALLOC((MLOC_A)*NLOC_A*sizeof(fftw_complex));
 
 	// distribute full matrix (from root) to local submatrices
 	pzgemr2d_(&num_pw, &num_pw, full_H, &one, &one, desc_root, A, &one, &one, desc, &blacs_ctxt);
 
-	// LWORK
-	int NP0 = numroc_(&num_pw, &MB, &zero, &zero, &nprow);
-	int MQ0 = numroc_(&num_pw, &MB, &zero, &zero, &npcol); // num_pw always >= 2 and >= NB
-
-	lwork = num_pw + (NP0+MQ0+NB)*NB; 
-	//work = TRACEFFTW_MALLOC(lwork*sizeof(fftw_complex));
-
-	int NP = numroc_(&num_pw, &NB, &myprow, &zero, &nprow);
-	int NQ = numroc_(&num_pw, &NB, &mypcol, &zero, &npcol);
-
-	lrwork = 1 + 9*num_pw + 3*NP*NQ;
-	//rwork = TRACECALLOC(lrwork,sizeof(double));
-
-	liwork = 7*num_pw + 8*npcol + 2;
-	//iwork = TRACECALLOC(liwork,sizeof(int));
-	printf("Pre-query: %d\t%d\n", lwork, lrwork);
-	lwork = lrwork = liwork = -1;
 	fftw_complex wsize;
 	double rwsize;
 	int iwsize;
+
+	lwork = lrwork = liwork = -1;
 
 	// Use LAPACK to get eigenvalues and eigenvectors, e.g. the zheev routine
 	// NB H is Hermitian (but not packed)
 	jobz = 'V';
 	uplo = 'U';
-	pzheevd_(&jobz, &uplo, &num_pw, A, &one, &one, desc, full_eigenvalue, Z, &one, &one, desc, &wsize, &lwork, &rwsize, &lrwork, &iwsize, &liwork, &status);
-	printf("Work Query results A: %f+%fi\t%f\t%d\n", creal(wsize), cimag(wsize), rwsize, iwsize);
 
+	// Workspace query
+	pzheevd_(&jobz, &uplo, &num_pw, A, &one, &one, desc, full_eigenvalue, Z, &one, &one, desc, &wsize, &lwork, &rwsize, &lrwork, &iwsize, &liwork, &status);
+
+	// Allocate work arrays to rocommended sizes
 	lwork = (int)creal(wsize);
 	lrwork = (int)rwsize;
 	liwork = iwsize;
 
-	//lwork = wsize;
 	work = TRACEFFTW_MALLOC(lwork*sizeof(fftw_complex));
-
-	////lrwork = rwsize;
 	rwork = TRACECALLOC(lrwork,sizeof(double));
-
-	////liwork = iwsize;
 	iwork = TRACECALLOC(liwork,sizeof(int));
+
+	// Actual work
 	pzheevd_(&jobz, &uplo, &num_pw, A, &one, &one, desc, full_eigenvalue, Z, &one, &one, desc, work, &lwork, rwork, &lrwork, iwork, &liwork, &status);
-	//// Deallocate memory
+
+	// Deallocate memory
 	TRACEFREE(iwork);
 	TRACEFREE(rwork);
 	TRACEFFTW_FREE(work);
@@ -530,7 +506,6 @@ void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,
 
 
 	Cblacs_pinfo(&blacs_rank, &blacs_size);
-	//fprintf(stderr, "HI!@%d/%d-%d/%d\n", world_rank, world_size, blacs_rank, blacs_size);
 	MPI_Dims_create(blacs_size, 2, dims);
 
 	int nprow, npcol, myprow, mypcol;
@@ -541,14 +516,12 @@ void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,
 	Cblacs_gridinit(&blacs_ctxt, &cbgi_r, nprow, npcol);
 	Cblacs_gridinit(&blacs_ctxt_root, &cbgi_r, 1, 1);
 	Cblacs_gridinfo(blacs_ctxt, &nprow, &npcol, &myprow, &mypcol);
-	fprintf(stderr, "HI!@%d/%d-%d/%d\n", myprow, nprow, mypcol, npcol);
 
 	//MB = num_pw/nprow;
 	int NB = num_pw/nprow;
 	int MB = NB;//num_pw/nprow;
 	int NLOC_A = numroc_(&num_pw, &NB, &mypcol, &zero, &npcol);
 	int MLOC_A = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
-	printf("[%d] LOCS: %d %d \n", world_rank, MLOC_A, NLOC_A);
 
 	int LDA = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
 	LDA = LDA < 1 ? 1 : LDA;
@@ -568,9 +541,7 @@ void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,
 	// distribute full matrix (from root) to local submatrices
 	pzgemr2d_(&num_pw, &num_pw, full_H, &one, &one, desc_root, A, &one, &one, desc, &blacs_ctxt);
 
-	lwork = -1;
-	lrwork = -1;
-	liwork = -1;
+	lwork = lrwork = liwork = -1;
 
 	//int wsize, rwsize, iwsize;
 	fftw_complex wsize;
@@ -583,22 +554,21 @@ void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,
 	int eigenvalues_found, eigenvectors_computed;
 	jobz = 'V';
 	uplo = 'U';
+
+	// Workspace query
 	pzheevr_(&jobz, &range, &uplo, &num_pw, A, &one, &one, desc, 
 			&VL, &VU, &IL, &IU, &eigenvalues_found, &eigenvectors_computed,
 			full_eigenvalue, Z, &one, &one, desc, &wsize, &lwork, &rwsize, &lrwork, &iwsize, &liwork, &status);
-	printf("Work Query results A: %f+%fi\t%f\t%d\n", creal(wsize), cimag(wsize), rwsize, iwsize);
 
+	// allocate recommended sizes;
 	lwork = (int)creal(wsize);
 	lrwork = (int)rwsize;
 	liwork = iwsize;
 
-	//lwork = wsize;
 	work = TRACEFFTW_MALLOC(lwork*sizeof(fftw_complex));
 
-	////lrwork = rwsize;
 	rwork = TRACECALLOC(lrwork,sizeof(double));
 
-	////liwork = iwsize;
 	iwork = TRACECALLOC(liwork,sizeof(int));
 
 	pzheevr_(&jobz, &range, &uplo, &num_pw, A, &one, &one, desc, 
@@ -606,9 +576,10 @@ void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,
 			full_eigenvalue, Z, &one, &one, desc, work, &lwork, rwork, &lrwork, iwork, &liwork, &status);
 
 	//// Deallocate memory
-	//TRACEFREE(iwork);
-	//TRACEFREE(rwork);
-	//TRACEFFTW_FREE(work);
+	TRACEFREE(iwork);
+	TRACEFREE(rwork);
+
+	TRACEFFTW_FREE(work);
 	TRACEFFTW_FREE(Z);
 	TRACEFFTW_FREE(A);
 	TRACEFFTW_FREE(full_H);

@@ -1,5 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
+
 #include <fftw3.h>
 #include "trace.h"
 
@@ -48,3 +50,18 @@ void report_mem_stats()
 	printf("Total memory used: %d MB.\n", max_mem_use/(1024*1024));
 	printf("Current memory use: %d MB.\n", current_mem_use/(1024*1024));
 }
+
+int mpi_printf(int comm_rank, const char *format, ...)
+{
+	int status = 0;
+	va_list myargs;
+
+	if(0 == comm_rank) {
+		va_start(myargs, format);
+		status = vprintf(format, myargs);
+		va_end(myargs);
+	}
+
+	return status;
+}
+

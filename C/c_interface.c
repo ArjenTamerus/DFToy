@@ -36,16 +36,13 @@ void c_init_H(int num_pw, double *H_kinetic, double *H_nonlocal) {
 
 }
 
-void c_apply_H(int num_pw, int num_states, double *state, double *H_kinetic, double *H_local, double *H_state) {
+void c_apply_H(int num_pw, int num_states, fftw_complex *state, double *H_kinetic, double *H_local, fftw_complex *H_state) {
 
 	int nb, np;
 
 	fftw_plan plan_forward, plan_backward;
 
 	fftw_complex *tmp_state = NULL, *tmp_state_in = NULL;
-
-	fftw_complex *cstate = (fftw_complex *)state;
-	fftw_complex *cH_state = (fftw_complex *)H_state;
 
 	tmp_state = TRACEFFTW_MALLOC(num_pw*sizeof(fftw_complex));
 	tmp_state_in = TRACEFFTW_MALLOC(num_pw*sizeof(fftw_complex));
@@ -55,8 +52,7 @@ void c_apply_H(int num_pw, int num_states, double *state, double *H_kinetic, dou
 
 	for(nb = 0; nb < num_states; nb++) {
 		for(np = 0; np < num_pw; np++) {
-			tmp_state_in[np] = cstate[nb*num_pw+np];
-			//printf("tmp_state_in[%d] = (%f,%f)\n", np, creal(tmp_state_in[np]), cimag(tmp_state_in[np]));
+			tmp_state_in[np] = state[nb*num_pw+np];
 		}
 
 		fftw_execute_dft(plan_forward, tmp_state_in, tmp_state);
@@ -65,20 +61,16 @@ void c_apply_H(int num_pw, int num_states, double *state, double *H_kinetic, dou
 			tmp_state[np] = H_local[np]*tmp_state[np]/num_pw;
 		}
 
-		fftw_execute_dft(plan_backward, tmp_state, &cH_state[nb*num_pw]);
+		fftw_execute_dft(plan_backward, tmp_state, &H_state[nb*num_pw]);
 
 		for(np = 0; np < num_pw; np++) {
-			cH_state[nb*num_pw+np] = cH_state[nb*num_pw+np] + H_kinetic[np]*cstate[nb*num_pw+np];
-			//printf("cH_state[%d] = (%f,%f)\n", np, creal(cH_state[np]), cimag(cH_state[np]));
+			H_state[nb*num_pw+np] = H_state[nb*num_pw+np] + H_kinetic[np]*state[nb*num_pw+np];
 		}
 	}
 
 
-	//TRACEFFTW_FREE(tmp_state);
-	//TRACEFFTW_FREE(tmp_state_in);
-  // call the fortran routine
-  //apply_h_(&num_pw,&num_states,state,H_kinetic,H_local,H_state);
-  //return;
+	TRACEFFTW_FREE(tmp_state);
+	TRACEFFTW_FREE(tmp_state_in);
 
 }
 
@@ -140,7 +132,7 @@ void construct_full_H(int num_pw,double *H_kinetic, double *H_nonlocal, fftw_com
 
 	// Add contribution from kinetic term
 	for(int i=1;i<num_pw;i++) {
-		full_H[i*num_pw+i] += (H_kinetic[i]+0i);
+		full_H[i*num_pw+i] += H_kinetic[i];
 	}
 
 }
@@ -159,28 +151,27 @@ void c_init_random_seed() {
 		srand(seed);
 		initialised = 1;
 	}
-	
-	//init_random_seed_();
 }
 
-void c_randomise_state(int num_pw, int num_states, fftw_complex state[num_states][num_pw])
+//void c_randomise_state(int num_pw, int num_states, fftw_complex state[num_states][num_pw])
+void c_randomise_state(int num_pw, int num_states, fftw_complex *state)
 {
 	double rnd1, rnd2;
 	int nb, np;
 
 	for (nb = 0; nb < num_states; nb++) {
 		rnd1 = random_double();
-		state[nb][0] = (rnd1+0.0*I);
-		//cstate[nb*num_pw] = (rnd1+0.0*I);
+		//state[nb][0] = (rnd1+0.0*I);
+		state[nb*num_pw] = (rnd1+0.0*I);
 
 		for (np = 1; np < num_pw/2+1; np++) {
 			rnd1 = random_double();
 			rnd2 = random_double();
-			state[nb][np] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
-			//cstate[nb*num_pw+np] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
+			//state[nb][np] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
+			state[nb*num_pw+np] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
 			//cmplx conjg
-			state[nb][num_pw-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
-			//cstate[(nb+1)*num_pw-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
+			//state[nb][num_pw-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
+			state[(nb+1)*num_pw-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
 		}
 	}
 }

@@ -559,6 +559,9 @@ void orthogonalise(int num_pw,int num_states, fftw_complex *state, fftw_complex 
 		}
 	}
 
+
+	return;
+
 }
 
 void precondition(int num_pw, int num_states, fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic) {
@@ -629,6 +632,8 @@ void precondition(int num_pw, int num_states, fftw_complex *search_direction, ff
 		}
 	}
 
+	return;
+
 }
 
 
@@ -689,6 +694,8 @@ void diagonalise(int num_pw,int num_states, fftw_complex *state, fftw_complex *H
 	transform(num_pw,num_states,state,rotation);
 	transform(num_pw,num_states,H_state,rotation);
 
+	return;
+
 }
 
 /* |-------------------------------------------------------|
@@ -696,28 +703,36 @@ void diagonalise(int num_pw,int num_states, fftw_complex *state, fftw_complex *H
 	 |      (you may wish to optimise them though)           |
 	 |-------------------------------------------------------| */
 
-void orthonormalise(int num_pw, int num_states, fftw_complex *state) {
+void orthonormalise(int num_pw, int num_states, double *state) {
 	/* |-------------------------------------------------|
 		 | This subroutine takes a set of states and       |
 		 | orthonormalises them.                           |
 		 |-------------------------------------------------| */
-	fftw_complex *overlap;
+	double *overlap;
 	int    nb2,nb1,np;
 	int    status;
 	int    offset1,offset2;
 
-	overlap = (fftw_complex *)TRACEFFTW_MALLOC(num_states*num_states*sizeof(fftw_complex));
+	overlap = (double *)TRACEMALLOC(2*num_states*num_states*sizeof(double));
 
 	// Compute the overlap matrix (using 1D storage)
 	for (nb2=0;nb2<num_states;nb2++) {
-		offset2 = nb2*num_pw;
+		offset2 = 2*nb2*num_pw;
 		for (nb1=0;nb1<num_states;nb1++) {
-			offset1 = nb1*num_pw;
-
-			overlap[nb2*num_states+nb1] = (0.0+0.0*I);
+			offset1 = 2*nb1*num_pw;
+			overlap[2*nb2*num_states+2*nb1]   = 0.0;
+			overlap[2*nb2*num_states+2*nb1+1] = 0.0;
 			for (np=0;np<num_pw;np++){
 				// The complex dot-product is conjg(trial_wvfn)*gradient
-				overlap[nb2*num_states+nb1] += conj(state[offset1+np])*state[offset2+np];
+
+				// First compute the real part of the overlap
+				overlap[2*nb2*num_states+2*nb1] += state[offset1+2*np]*state[offset2+2*np];
+				overlap[2*nb2*num_states+2*nb1] += state[offset1+2*np+1]*state[offset2+2*np+1];
+
+				// Now compute the imaginary part of the overlap
+				overlap[2*nb2*num_states+2*nb1+1] += state[offset1+2*np]*state[offset2+2*np+1];
+				overlap[2*nb2*num_states+2*nb1+1] -= state[offset1+2*np+1]*state[offset2+2*np];
+
 			}
 		}
 	}
@@ -743,52 +758,64 @@ void orthonormalise(int num_pw, int num_states, fftw_complex *state) {
 	// Set lower triangle to zero - N.B. column-major
 	for (nb2=0;nb2<num_states;nb2++) {
 		for (nb1=nb2+1;nb1<num_states;nb1++) {
-			overlap[nb2*num_states+nb1] = (0.0+0.0*I);
+			overlap[2*nb2*num_states+2*nb1]   = 0.0;
+			overlap[2*nb2*num_states+2*nb1+1] = 0.0;
 		}
 	}
 
 	// overlap array now contains the (upper triangular) orthonormalising transformation
-	transform(num_pw, num_states, state, overlap);
+	transform(num_pw,num_states,state,overlap);
 
-	TRACEFFTW_FREE(overlap);
+	TRACEFREE(overlap);
+
+	return;
 
 }
 
-void transform(int num_pw, int num_states, fftw_complex *state, fftw_complex *transformation) {
+void transform(int num_pw,int num_states,double *state,double *transformation) {
 	/* |-------------------------------------------------|
 		 | This subroutine takes a set of states and       |
 		 | applies a linear transformation to them.        |
 		 |-------------------------------------------------| */
 	int nb2,nb1,np,i;
 	int offset1,offset2;
-	fftw_complex *new_state;
+	double *new_state;
 
-	new_state = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_states*sizeof(fftw_complex));
+	new_state=(double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
 
 	// Apply transformation to state and H_state
-	for (i=0;i<num_pw*num_states;i++) { new_state[i] = (0.0+0.0*I); }
+	for (i=0;i<2*num_pw*num_states;i++) { new_state[i] = 0.0; }
 
 	for (nb2=0;nb2<num_states;nb2++) {
-		offset2 = nb2*num_pw;
+		offset2 = 2*nb2*num_pw;
 		for (nb1=0;nb1<num_states;nb1++) {
-			offset1 = nb1*num_pw;
+			offset1 = 2*nb1*num_pw;
 			for (np=0;np<num_pw;np++) {
 				// Here there is no conjugation of the "state" array
-				new_state[offset1+np] += state[offset2+np]*transformation[nb1*num_states+nb2];
+
+				// Compute real part of new_state
+				new_state[offset1+2*np] += state[offset2+2*np]*transformation[2*nb1*num_states+2*nb2]; 
+				new_state[offset1+2*np] -= state[offset2+2*np+1]*transformation[2*nb1*num_states+2*nb2+1];
+
+				// Compute imaginary part of new_state
+				new_state[offset1+2*np+1] += state[offset2+2*np]*transformation[2*nb1*num_states+2*nb2+1]; 
+				new_state[offset1+2*np+1] += state[offset2+2*np+1]*transformation[2*nb1*num_states+2*nb2]; 
 			}
 		}
 	}
 
-	for (i=0;i<num_pw*num_states;i++) {state[i] = new_state[i];}
+	for (i=0;i<2*num_pw*num_states;i++) {state[i] = new_state[i];}
 
-	TRACEFFTW_FREE(new_state);
+	TRACEFREE(new_state);
+
+	return;
 
 }
 
 
-void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
-		double *H_kinetic, double *H_local, fftw_complex *direction,
-		fftw_complex *gradient, double *eigenvalue, double *energy) {
+void line_search(int num_pw,int num_states,double *approx_state,
+		double *H_kinetic, double *H_local, double *direction,
+		double *gradient,double *eigenvalue,double *energy) {
 	/*  |-------------------------------------------------|
 			| This subroutine takes an approximate eigenstate |
 			| and searches along a direction to find an       |
@@ -798,7 +825,7 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	double tmp_energy;
 	double step;
 	double opt_step;
-	fftw_complex *tmp_state;
+	double *tmp_state;
 	double d2E_dstep2;
 	double best_step;
 	double best_energy;
@@ -812,17 +839,14 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	double dlamch_(char *arg);
 	epsilon = dlamch_(&arg);
 
-	double *d_direction = (double*) direction;
 	// To try to keep a convenient step length, we reduce the size of the search direction
 	mean_norm = 0.0;
 	for (nb=0;nb<num_states;nb++) {
-		offset=nb*num_pw;
+		offset=2*nb*num_pw;
 		tmp_sum = 0.0;
 		for (np=0;np<num_pw;np++) {
-			// NOTE apparently taking mean_norm as sum(abs(direction)) converged
-			// faster than the original? Why?
-			//mean_norm += cabs(direction[offset+np]);
-			tmp_sum += pow(cabs(direction[offset+np]),2);
+			tmp_sum += pow(direction[offset+2*np],2);
+			tmp_sum += pow(direction[offset+2*np+1],2);
 		}
 		tmp_sum    = sqrt(tmp_sum);
 		mean_norm += tmp_sum;
@@ -830,22 +854,23 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	mean_norm     = mean_norm/(double)num_states;
 	inv_mean_norm = 1.0/mean_norm;
 
-	for(i=0;i<num_pw*num_states;i++) { direction[i] = direction[i]*inv_mean_norm; }
+	for(i=0;i<2*num_pw*num_states;i++) { direction[i] = direction[i]*inv_mean_norm; }
 
 	// The rate-of-change of the energy is just 2*Re{direction.gradient}
 	denergy_dstep = 0.0;
 	for (nb=0;nb<num_states;nb++) {
-		offset = num_pw*nb;
+		offset = 2*num_pw*nb;
 		tmp_sum = 0.0;
 		for (np=0;np<num_pw;np++) {
 			// The complex dot-product is conjg(trial_wvfn)*gradient
 			// tmp_sum is the real part, so we only compute that
-			tmp_sum += creal(conj(direction[offset+np])*gradient[offset+np]);
+			tmp_sum += direction[offset+2*np]*gradient[offset+2*np];
+			tmp_sum += direction[offset+2*np+1]*gradient[offset+2*np+1];
 		}
 		denergy_dstep += 2.0*tmp_sum;
 	}
 
-	tmp_state = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
+	tmp_state = (double *)TRACEMALLOC(2*num_pw*num_states*sizeof(double));
 
 	best_step   = 0.0;
 	best_energy = *energy;
@@ -856,7 +881,7 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	// We find a trial step that lowers the energy:
 	for (loop=0;loop<10;loop++) {
 
-		for (i=0;i<num_pw*num_states;i++) {
+		for (i=0;i<2*num_pw*num_states;i++) {
 			tmp_state[i]   = approx_state[i] + step*direction[i];
 		}
 
@@ -868,12 +893,13 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 		// Compute the new energy estimate
 		tmp_energy = 0.0;
 		for (nb=0;nb<num_states;nb++) {
-			offset = num_pw*nb;
+			offset = 2*num_pw*nb;
 			tmp_sum = 0.0;
 			for (np=0;np<num_pw;np++) {
 				// The complex dot-product a.b is conjg(a)*b
 				// tmp_sum is the real part, so we just compute that
-				tmp_sum += creal(conj(tmp_state[offset+np])*gradient[offset+np]);
+				tmp_sum +=tmp_state[offset+2*np]*gradient[offset+2*np];
+				tmp_sum +=tmp_state[offset+2*np+1]*gradient[offset+2*np+1];
 			}
 			tmp_energy += tmp_sum;
 		}
@@ -926,7 +952,7 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	//    de/dx = de + 2*c*x
 
 
-	for (i=0;i<num_pw*num_states;i++) { approx_state[i] += opt_step*direction[i];}
+	for (i=0;i<2*num_pw*num_states;i++) { approx_state[i] += opt_step*direction[i];}
 
 	orthonormalise(num_pw,num_states,approx_state);
 
@@ -936,12 +962,13 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	// Compute the new energy estimate
 	*energy = 0.0;
 	for (nb=0;nb<num_states;nb++) {
-		offset = num_pw*nb;
+		offset = 2*num_pw*nb;
 		tmp_sum = 0.0;
 		for (np=0;np<num_pw;np++) {
 			// The complex dot-product a.b is conjg(a)*b
 			// tmp_sum is just the real part, so we only compute that
-			tmp_sum += creal(conj(approx_state[offset+np])*gradient[offset+np]);
+			tmp_sum += approx_state[offset+2*np]*gradient[offset+2*np];
+			tmp_sum += approx_state[offset+2*np+1]*gradient[offset+2*np+1];
 		}
 		eigenvalue[nb] = tmp_sum;
 		*energy += tmp_sum;
@@ -952,7 +979,7 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 		// if(best_step>0.0_dp) then
 		if (fabs(best_step-epsilon)>0.0) { // roughly machine epsilon in double precision
 
-			for (i=0;i<num_pw*num_states;i++) {
+			for (i=0;i<2*num_pw*num_states;i++) {
 				approx_state[i] += best_step*direction[i];
 			}
 
@@ -964,12 +991,13 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 			// Compute the new energy estimate
 			*energy = 0.0;
 			for (nb=0;nb<num_states;nb++) {
-				offset = num_pw*nb;
+				offset = 2*num_pw*nb;
 				tmp_sum = 0.0;
 				for (np=0;np<num_pw;np++) {
 					// The complex dot-product a.b is conjg(a)*b
 					// tmp_sum is just the real part, so we only compute that
-					tmp_sum += creal(conj(approx_state[offset+np])*gradient[offset+np]);
+					tmp_sum += approx_state[offset+2*np]*gradient[offset+2*np];
+					tmp_sum += approx_state[offset+2*np+1]*gradient[offset+2*np+1];
 				}
 				eigenvalue[nb] = tmp_sum;
 				*energy += tmp_sum;
@@ -981,6 +1009,9 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 		}
 	}
 
+
+	//       mpi_printf(world_rank," %f %d %f <- test2\n",opt_step,step,energy);
+
 	// We'll use this step as the basis of our trial step next time
 	// trial_step = 2*opt_step;
 
@@ -989,8 +1020,8 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 
 }
 
-void output_results(int num_pw, int num_states, double *H_local,
-		fftw_complex *wvfn) {
+void output_results(int num_pw, int num_states, double* H_local,
+		double* wvfn) {
 
 	FILE* potential = fopen("pot.dat", "w");
 
@@ -1000,16 +1031,22 @@ void output_results(int num_pw, int num_states, double *H_local,
 
 	fclose(potential);
 
-	fftw_complex* realspace_wvfn = (fftw_complex*)TRACEFFTW_MALLOC(num_pw * sizeof(fftw_complex));
+	fftw_complex* realspace_wvfn =
+		(fftw_complex*)TRACEFFTW_MALLOC(num_pw * sizeof(fftw_complex));
+	fftw_complex* tmp_wvfn = (fftw_complex*)TRACEFFTW_MALLOC(num_pw * sizeof(fftw_complex));
 
-	fftw_plan plan = fftw_plan_dft_1d(num_pw, wvfn, realspace_wvfn, FFTW_FORWARD, FFTW_ESTIMATE);
+	fftw_plan plan =
+		fftw_plan_dft_1d(num_pw, tmp_wvfn, realspace_wvfn, FFTW_FORWARD, FFTW_ESTIMATE);
 
 	for (int nb = 0; nb < num_states; ++nb) {
 		char filename[15];
 		snprintf(filename, 15, "wvfn_%.4i.dat", nb);
 		FILE* wvfn_file = fopen(filename, "w");
 
-		fftw_execute_dft(plan, wvfn, realspace_wvfn);
+		int offset = 2*nb * num_pw;
+		memcpy(tmp_wvfn, &wvfn[offset], 2*num_pw*sizeof(double));
+
+		fftw_execute_dft(plan, tmp_wvfn, realspace_wvfn);
 
 		for (int np = 0; np < num_pw; ++np) {
 			fprintf(wvfn_file, "%.12g\t%.12g\n", np / (double)(num_pw),
@@ -1018,8 +1055,7 @@ void output_results(int num_pw, int num_states, double *H_local,
 
 		fclose(wvfn_file);
 	}
-
 	fftw_destroy_plan(plan);
-
 	TRACEFFTW_FREE(realspace_wvfn);
+	TRACEFFTW_FREE(tmp_wvfn);
 }

@@ -10,19 +10,23 @@ extern unsigned int seed;       // random number seed
 
 // Function prototypes
 void exact_diagonalisation(int num_pw, int num_states, double *H_kinetic, double *H_nonlocal, double *full_eigenvalue, int diag_mode);
-void orthonormalise       (int num_pw, int num_states, double *state);
+void orthonormalise       (int num_pw, int num_states, fftw_complex *state);
 //void orthogonalise        (int num_pw, int num_states, double *state, double *ref_state);
 void orthogonalise        (int num_pw, int num_states, fftw_complex *state, fftw_complex *ref_state);
-void transform            (int num_pw, int num_states, double *state, double *transformation);
+void transform            (int num_pw, int num_states, fftw_complex *state, fftw_complex *transformation);
 void diagonalise          (int num_pw, int num_states, fftw_complex *state, fftw_complex *H_state, double *eigenvalues, fftw_complex *rotation);
 void precondition         (int num_pw, int num_states, fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic);
-void line_search          (int num_pw, int num_states, double *approx_state,
-		double *H_kinetic, double *H_nonlocal, double *direction,
-		double *gradient,  double *eigenvalue, double *energy);
-void output_results(int num_pw, int num_states, double* H_local,
-		double* wvfn);
+void line_search          (int num_pw, int num_states, fftw_complex *approx_state,
+		double *H_kinetic, double *H_nonlocal, fftw_complex *direction,
+		fftw_complex *gradient,  double *eigenvalue, double *energy);
+void output_results(int num_pw, int num_states, double *H_local,
+		fftw_complex *wvfn);
 
 // LAPACK function prototypes
+void   zpotrf_(char *uplo, int *N, fftw_complex *A, int *lda, int *status);
+void   ztrtri_(char *uplo, char *jobz, int *N, fftw_complex *A, int *lda, int *status);
+
+// LAPACK ZHEEV*
 void   zheev_(char *jobz, char *uplo, int *N, fftw_complex *A, int *ldA, double *w,
 		fftw_complex *work, int *lwork, double *rwork, int *status); 
 
@@ -35,14 +39,25 @@ void zheevr_(char *jobz, char *range, char *uplo, int *N, fftw_complex *A,
 		double *W, fftw_complex *Z, int *ldZ, int *isuppz, fftw_complex *work,
 		int *lwork, double *rwork, int *lrwork, int *iwork, int *liwork, int *status);
 
-void   zpotrf_(char *uplo, int *N,double *A,int *lda,int *status);
-void   ztrtri_(char *uplo, char *jobz, int *N, double *A,int *lda, int *status);
+// ScaLAPACK PZHEEV*
+void pzheev_(char *jobz, char *uplo, int *N, fftw_complex *A, int *iA, int *jA, int *descA, double *W, fftw_complex *Z, int *iZ, int *jZ, int *descZ, fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *info);
+
+void pzheevd_(char *jobz, char *uplo, int *N, fftw_complex *A, int *iA, int *jA, int *descA, double *W, fftw_complex *Z, int *iZ, int *jZ, int *descZ, fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *iwork, int *liwork, int *info);
+
+void pzheevr_(char *jobz, char *range, char *uplo, int *N, fftw_complex *A, int *iA, int *jA, int *descA, int *vl, int *vu, int *il, int *iu, int *M, int *nz, double *W, fftw_complex *Z, int *iZ, int *jZ, int *descZ, fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *iwork, int *liwork, int *info);
+
+// ScaLAPACK support routines
+void descinit_(int *desc, int *M, int *N, int *MB, int *NB, int *irsrc, int *icsrc, int *ictxt, int *lld, int *info);
+
+int numroc_(int *N, int *NB, int *iproc, int *isrcproc, int *nprocs);
+
+void pzgemr2d_(int *m, int *n, fftw_complex *A, int *ia, int *ja, int *desca, fftw_complex *B, int *ib, int *jb, int *descb, int *ictxt);
 
 // C interface to init_H
 void c_init_H(int num_pw, double *H_kinetic, double *H_nonlocal);
 
 // C interface to apply_H
-void c_apply_H(int num_pw, int num_states, double *state, double *H_kinetic, double *H_nonlocal, double *H_state);
+void c_apply_H(int num_pw, int num_states, fftw_complex *state, double *H_kinetic, double *H_nonlocal, fftw_complex *H_state);
 
 // C interface to compute_eigenvalues
 void c_compute_eigenvalues(int num_pw,int num_states, double *state, double *H_kinetic, double *H_nonlocal, double *eigenvalues);
@@ -54,7 +69,8 @@ void construct_full_H(int num_pw, double *H_kinetic, double *H_nonlocal, fftw_co
 void c_init_random_seed();
 
 // C interface to randomise_state()
-void c_randomise_state(int num_pw,int num_states, fftw_complex state[num_states][num_pw]);
+//void c_randomise_state(int num_pw,int num_states, fftw_complex state[num_states][num_pw]);
+void c_randomise_state(int num_pw, int num_states, fftw_complex *state);
 
 // C interface to line_search
 //double c_line_search(int num_pw, int num_states, double *approx_state, double *H_kinetic, double *H_nonlocal, double *direction, double energy);
