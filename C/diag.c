@@ -48,7 +48,7 @@ int get_diag_mode() {
 
 void diag_zheev(int num_pw, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
-	printf("LAPACK diagonaliser:  ZHEEV\n");
+	mpi_printf(0, "LAPACK diagonaliser:  ZHEEV\n");
 	fftw_complex *full_H;
 	fftw_complex *work;
 	double *rwork;
@@ -60,7 +60,7 @@ void diag_zheev(int num_pw, double *H_kinetic,double *H_local,double *full_eigen
 	char uplo;
 
 	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	full_H = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 
 	construct_full_H(num_pw,H_kinetic,H_local,full_H);
 
@@ -84,7 +84,7 @@ void diag_zheev(int num_pw, double *H_kinetic,double *H_local,double *full_eigen
 
 void diag_zheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
-	printf("LAPACK diagonaliser:  ZHEEVD\n");
+	mpi_printf(0, "LAPACK diagonaliser:  ZHEEVD\n");
 	fftw_complex *full_H;
 	fftw_complex *work;
 	double *rwork;
@@ -96,7 +96,7 @@ void diag_zheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	char uplo;
 
 	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	full_H = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 
 	construct_full_H(num_pw,H_kinetic,H_local,full_H);
 
@@ -127,7 +127,7 @@ void diag_zheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 
 void diag_zheevr_a(int num_pw, int num_states, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
-	printf("LAPACK diagonaliser:  ZHEEVR\n");
+	mpi_printf(0, "LAPACK diagonaliser:  ZHEEVR\n");
 	fftw_complex *full_H;
 	fftw_complex *work;
 	double *rwork;
@@ -139,7 +139,7 @@ void diag_zheevr_a(int num_pw, int num_states, double *H_kinetic,double *H_local
 	char uplo;
 
 	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	full_H = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 
 	construct_full_H(num_pw,H_kinetic,H_local,full_H);
 
@@ -209,7 +209,7 @@ void diag_zheevr_a(int num_pw, int num_states, double *H_kinetic,double *H_local
 
 void diag_zheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
-	printf("LAPACK diagonaliser:  ZHEEVR\n");
+	mpi_printf(0, "LAPACK diagonaliser:  ZHEEVR\n");
 	fftw_complex *full_H;
 	fftw_complex *work;
 	double *rwork;
@@ -221,7 +221,7 @@ void diag_zheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,d
 	char uplo;
 
 	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	full_H = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 
 	construct_full_H(num_pw,H_kinetic,H_local,full_H);
 
@@ -278,7 +278,7 @@ void diag_zheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,d
 
 void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
-	printf("LAPACK diagonaliser:  PZHEEV\n");
+	mpi_printf(0, "LAPACK diagonaliser:  PZHEEV\n");
 	fftw_complex *full_H;
 	fftw_complex *work;
 	double *rwork;
@@ -296,7 +296,7 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	full_H = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 
 	construct_full_H(num_pw,H_kinetic,H_local,full_H);
 
@@ -318,7 +318,7 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	int MB = NB;//num_pw/nprow;
 	int NLOC_A = numroc_(&num_pw, &NB, &mypcol, &zero, &npcol);
 	int MLOC_A = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
-	printf("[%d] LOCS: %d %d \n", world_rank, MLOC_A, NLOC_A);
+	mpi_printf(0, "[%d] LOCS: %d %d \n", world_rank, MLOC_A, NLOC_A);
 
 	int LDA = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
 	LDA = LDA < 1 ? 1 : LDA;
@@ -361,7 +361,7 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 
 	//// Workspace query
 	//pzheev_(&jobz, &uplo, &num_pw, A, &one, &one, desc, full_eigenvalue, Z, &one, &one, desc, &wsize, &lwork, &rwsize, &lrwork, &status);
-	//printf("Work Query results A: %f+%fi\t%f\n", creal(wsize), cimag(wsize), rwsize);
+	//mpi_printf(0, "Work Query results A: %f+%fi\t%f\n", creal(wsize), cimag(wsize), rwsize);
 
 	//// Allocate work arrays to recommended size
 	//lwork = (int)creal(wsize);
@@ -384,7 +384,7 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 
 void diag_pzheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
-	printf("LAPACK diagonaliser:  PZHEEVD\n");
+	mpi_printf(0, "LAPACK diagonaliser:  PZHEEVD\n");
 	fftw_complex *full_H;
 	fftw_complex *work;
 	double *rwork;
@@ -403,13 +403,13 @@ void diag_pzheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eig
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	full_H = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 
 	construct_full_H(num_pw,H_kinetic,H_local,full_H);
 
 
 	Cblacs_pinfo(&blacs_rank, &blacs_size);
-	//fprintf(stderr, "HI!@%d/%d-%d/%d\n", world_rank, world_size, blacs_rank, blacs_size);
+	//fmpi_printf(0, stderr, "HI!@%d/%d-%d/%d\n", world_rank, world_size, blacs_rank, blacs_size);
 	MPI_Dims_create(blacs_size, 2, dims);
 
 	int nprow, npcol, myprow, mypcol;
@@ -481,7 +481,7 @@ void diag_pzheevd(int num_pw, double *H_kinetic,double *H_local,double *full_eig
 
 void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,double *full_eigenvalue)
 {
-	printf("LAPACK diagonaliser:  PZHEEVR\n");
+	mpi_printf(0, "LAPACK diagonaliser:  PZHEEVR\n");
 	fftw_complex *full_H;
 	fftw_complex *work;
 	double *rwork;
@@ -500,7 +500,7 @@ void diag_pzheevr(int num_pw, int num_states, double *H_kinetic,double *H_local,
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	// First we allocate memory for and construct the full Hamiltonian
-	full_H = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	full_H = (fftw_complex *)TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 
 	construct_full_H(num_pw,H_kinetic,H_local,full_H);
 
