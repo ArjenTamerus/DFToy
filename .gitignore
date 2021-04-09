@@ -1,0 +1,6 @@
+*/eigensolver
+*.o
+*.a
+*.so
+*.out
+*.x
