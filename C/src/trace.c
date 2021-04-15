@@ -53,8 +53,8 @@ void report_mem_stats()
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-	mpi_printf(rank, "Total memory used: %d MB.\n", max_mem_use/(1024*1024));
-	mpi_printf(rank, "Current memory use: %d MB.\n", current_mem_use/(1024*1024));
+	mpi_printf(rank, "Memory: %d\n", max_mem_use/(1024*1024));
+	//mpi_printf(rank, "Current memory use: %d MB.\n", current_mem_use/(1024*1024));
 }
 
 int mpi_printf(int comm_rank, const char *format, ...)

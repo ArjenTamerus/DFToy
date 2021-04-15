@@ -318,7 +318,6 @@ void diag_pzheev(int num_pw, double *H_kinetic,double *H_local,double *full_eige
 	int MB = NB;//num_pw/nprow;
 	int NLOC_A = numroc_(&num_pw, &NB, &mypcol, &zero, &npcol);
 	int MLOC_A = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
-	mpi_printf(0, "[%d] LOCS: %d %d \n", world_rank, MLOC_A, NLOC_A);
 
 	int LDA = numroc_(&num_pw, &MB, &myprow, &zero, &nprow);
 	LDA = LDA < 1 ? 1 : LDA;
