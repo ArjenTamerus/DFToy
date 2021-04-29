@@ -8,7 +8,7 @@
 #include "interface.h"
 #include "trace.h"
 
-#include <PBblacs.h>
+//#include <PBblacs.h>
 
 int get_diag_mode() {
 	int mode = 0;
@@ -40,6 +40,9 @@ int get_diag_mode() {
 			else {
 				mode = 5;
 			}
+		}
+		if(!strncmp(zheev_env, "ELPA", 4)) {
+			mode = 8;
 		}
 	}
 

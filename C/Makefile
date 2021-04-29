@@ -2,7 +2,7 @@
 OMPI_CC=gcc
 CC=mpicc -g
 #LAPACKLIBS=-llapack -lblas
-LAPACKLIBS= -lscalapack -lopenblas -lgfortran
+LAPACKLIBS= -lelpa_openmp -lscalapack -lopenblas -fopenmp -lgfortran
 #LAPACKLIBS=`pkg-config --libs mkl-dynamic-lp64-seq`
 #LAPACKLIBS=-DMKL_ILP64 -I/opt/intel/mkl/include -L/opt/intel/mkl/lib/intel64 -lmkl_scalapack_lp64 -Wl,--no-as-needed -lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core -lmkl_blacs_intelmpi_lp64 -lgomp -lpthread -lm -ldl
 LIBS= $(LAPACKLIBS) -lfftw3 -lm

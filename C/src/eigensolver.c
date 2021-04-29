@@ -504,6 +504,9 @@ void exact_diagonalisation(int num_pw, int num_states, double *H_kinetic, double
 		case 5:
 			diag_pzheevr(num_pw, num_states, H_kinetic, H_local, full_eigenvalue);
 			break;
+		case 8:
+			diag_elpa(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
 		default:
 			diag_zheev(num_pw, H_kinetic, H_local, full_eigenvalue);
 			break;
