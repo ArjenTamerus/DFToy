@@ -40,6 +40,9 @@ int get_elpa_2stage_solver()
 		if(!strncmp(env, "ELPA_2STAGE_COMPLEX_AVX512_BLOCK2", 33)) {
 			return ELPA_2STAGE_COMPLEX_AVX512_BLOCK2;
 		}
+		if(!strncmp(env, "ELPA_2STAGE_COMPLEX_GPU", 22)) {
+			return ELPA_2STAGE_COMPLEX_GPU;
+		}
 	}
 
 	return ELPA_2STAGE_COMPLEX_AVX2_BLOCK1;
@@ -119,11 +122,13 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
+	int elpa_blocksize = 32;
+
 	elpa_set(elpa_handle, "na", num_pw, &status);
 	elpa_set(elpa_handle, "nev", num_pw, &status);
 	elpa_set(elpa_handle, "local_nrows", MLOC_A, &status);
 	elpa_set(elpa_handle, "local_ncols", NLOC_A, &status);
-	elpa_set(elpa_handle, "nblk", NB, &status);
+	elpa_set(elpa_handle, "nblk", elpa_blocksize, &status);
 	elpa_set(elpa_handle, "mpi_comm_parent", MPI_Comm_c2f(MPI_COMM_WORLD), &status);
 	elpa_set(elpa_handle, "process_row", myprow, &status);
 	elpa_set(elpa_handle, "process_col", mypcol, &status);
@@ -131,8 +136,11 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 
 	status = elpa_setup(elpa_handle);
 
+	int solver = get_elpa_2stage_solver();
+	if (solver == ELPA_2STAGE_COMPLEX_GPU) 
+		elpa_set(elpa_handle, "gpu", 1, &status);
 	elpa_set(elpa_handle, "solver", get_elpa_1_2_stage(), &status);
-	elpa_set(elpa_handle, "complex_kernel", get_elpa_2stage_solver(), &status);
+	elpa_set(elpa_handle, "complex_kernel", solver, &status);
 
 
 	elpa_eigenvectors(elpa_handle, (double complex*)A, full_eigenvalue, A, &status);
