@@ -133,6 +133,8 @@ int main(int argc, char **argv)
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
+	mpi_printf(world_rank,"Running on %d MPI processes.\n", world_size);
+
 	// No. nonzero wavevectors "G" in our wavefunction expansion
 	num_wavevectors = 100;
 
@@ -142,29 +144,21 @@ int main(int argc, char **argv)
 	// Update num_wavevectors and num_states from cmd line
 	// Don't care about error handling
 	// Just read `./eigensolver [num_wavevectors [num_states]]
-	// TODO MPI-ify
-	//mpi_printf(world_rank,"CMD: %s", argv[0]);
 	if (argc > 1) {
-		//mpi_printf(world_rank," %s", argv[1]);
 		num_wavevectors = (int) strtol(argv[1], NULL, 10);
 	}
 	if (argc > 2) {
-		//mpi_printf(world_rank," %s", argv[2]);
 		num_states = (int) strtol(argv[2], NULL, 10);
 	}
-	//mpi_printf(world_rank,"\n");
 
-	mpi_printf(world_rank,"ntasks: %d\n", world_size);
 	// No. plane-waves in our wavefunction expansion. One plane-wave has
 	// wavevector 0, and for all the others there are plane-waves at +/- G
-	num_pw = num_wavevectors;
-	mpi_printf(world_rank,"num_pw: %d\n", num_pw);
+	num_pw = 2*num_wavevectors+1;
 
 	// Catch any nonsensical combinations of parameters
 	if (num_states>=num_pw) {
 		mpi_printf(world_rank,"Error, num_states must be less than num_pw\n");
 		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
-		//exit(EXIT_FAILURE);
 	} 
 
 	// Set tolerance on the eigenvalue sum when using an iterative search. 
@@ -175,7 +169,7 @@ int main(int argc, char **argv)
 	// Initialise random number generator
 	c_init_random_seed();
 
-	//mpi_printf(world_rank,"Initialising Hamiltonian...\n");
+	mpi_printf(world_rank,"Initialising Hamiltonian...\n");
 
 	// Initialise and build the Hamiltonian, comprising two terms: the kinetic energy,
 	// which is a diagonal matrix in the plane-wave basis (Fourier space); and the local
@@ -192,7 +186,7 @@ int main(int argc, char **argv)
 		 | You will need to complete the function called    |
 		 ---------------------------------------------------- */
 	RESET_MEMSTATS();
-	//mpi_printf(world_rank,"Starting full diagonalisation...\n\n");
+	mpi_printf(world_rank,"Starting full diagonalisation...\n\n");
 
 	init_cpu_time    = clock();
 	full_eigenvalue = (double *)TRACEMALLOC(num_pw*sizeof(double));
@@ -202,22 +196,20 @@ int main(int argc, char **argv)
 
 	exact_cpu_time = curr_cpu_time-init_cpu_time;
 
-	//mpi_printf(world_rank," State         Eigenvalue\n");
-	//for (nb=0;nb<num_states;nb++) {
-	//	mpi_printf(world_rank,"     %d % #19.10g\n",1+nb,full_eigenvalue[nb]);
-	//}
+	mpi_printf(world_rank," State         Eigenvalue\n");
+	for (nb=0;nb<num_states;nb++) {
+		mpi_printf(world_rank,"     %d % #19.10g\n",1+nb,full_eigenvalue[nb]);
+	}
 
 	// Energy is the sum of the eigenvalues of the occupied states
 	exact_energy = 0.0;
 	for (nb=0;nb<num_states;nb++) { exact_energy += full_eigenvalue[nb]; }
 	mpi_printf(world_rank,"Ground state energy: % #16.10g\n",exact_energy);
 
-	mpi_printf(world_rank,"Full diagonalisation: %f\n",(double)exact_cpu_time/(double)CLOCKS_PER_SEC);
+	mpi_printf(world_rank,"Full diagonalisation time: %f s\n",(double)exact_cpu_time/(double)CLOCKS_PER_SEC);
 
 	report_mem_stats();
 	RESET_MEMSTATS();
-	MPI_Finalize();
-	return 0;
 
 	// Allocate memory for iterative eigenvector search. Each of the following
 	// are stored in column-major (Fortran) order. Each column contains the 
