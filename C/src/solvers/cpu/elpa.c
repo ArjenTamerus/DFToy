@@ -45,7 +45,7 @@ int get_elpa_2stage_solver()
 		}
 	}
 
-	return ELPA_2STAGE_COMPLEX_AVX2_BLOCK1;
+	return ELPA_2STAGE_COMPLEX_AVX2_BLOCK2;
 }
 
 int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigenvalue)
@@ -122,7 +122,7 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
-	int elpa_blocksize = 32;
+	int elpa_blocksize = 128;
 
 	elpa_set(elpa_handle, "na", num_pw, &status);
 	elpa_set(elpa_handle, "nev", num_pw, &status);
@@ -133,6 +133,7 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 	elpa_set(elpa_handle, "process_row", myprow, &status);
 	elpa_set(elpa_handle, "process_col", mypcol, &status);
 	elpa_set(elpa_handle, "blacs_context", blacs_ctxt, &status);
+	//elpa_set(elpa_handle, "qr", 1, &status);
 
 	status = elpa_setup(elpa_handle);
 

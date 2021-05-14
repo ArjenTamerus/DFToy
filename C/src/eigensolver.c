@@ -157,7 +157,7 @@ int main(int argc, char **argv)
 	mpi_printf(world_rank,"ntasks: %d\n", world_size);
 	// No. plane-waves in our wavefunction expansion. One plane-wave has
 	// wavevector 0, and for all the others there are plane-waves at +/- G
-	num_pw = 2*num_wavevectors+1;
+	num_pw = num_wavevectors;
 	mpi_printf(world_rank,"num_pw: %d\n", num_pw);
 
 	// Catch any nonsensical combinations of parameters
