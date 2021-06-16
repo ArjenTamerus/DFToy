@@ -125,6 +125,16 @@ int main(int argc, char **argv)
 	// Timing variables
 	clock_t init_cpu_time,curr_cpu_time,exact_cpu_time,iter_cpu_time;
 
+
+	fftw_complex quad[4];
+	fftw_complex val = 13.37 + 12.34*I;
+	//quad[0] = val;
+	//quad[1] = -val;
+	//quad[2] = conj(val);
+	//quad[3] = -conj(val);
+	//for (i = 0; i < 4; i++) printf("%f\t%f\n", quad[i]);
+	//exit(0);
+
 	/* ---------------------
 		 | Initialise system |
 		 --------------------*/
@@ -136,7 +146,7 @@ int main(int argc, char **argv)
 	mpi_printf(world_rank,"Running on %d MPI processes.\n", world_size);
 
 	// No. nonzero wavevectors "G" in our wavefunction expansion
-	num_wavevectors = 100;
+	num_wavevectors = 5;
 
 	// No. eigenstates to compute
 	num_states = 1;
@@ -153,7 +163,10 @@ int main(int argc, char **argv)
 
 	// No. plane-waves in our wavefunction expansion. One plane-wave has
 	// wavevector 0, and for all the others there are plane-waves at +/- G
-	num_pw = 2*num_wavevectors+1;
+	//num_pw = 2*num_wavevectors+1;
+	//num_pw = 8*num_wavevectors*num_wavevectors*num_wavevectors+1-8;
+	num_pw = 2*num_wavevectors+1;// 1D
+	num_pw = num_pw*num_pw;// 2D
 
 	// Catch any nonsensical combinations of parameters
 	if (num_states>=num_pw) {
@@ -164,7 +177,7 @@ int main(int argc, char **argv)
 	// Set tolerance on the eigenvalue sum when using an iterative search. 
 	// The iterative search will stop when the change in the eigenvalue sum
 	// per iteration is less than this tolerance.
-	energy_tol = 1.0e-10;
+	energy_tol = 1.0e-2;
 
 	// Initialise random number generator
 	c_init_random_seed();
@@ -179,13 +192,13 @@ int main(int argc, char **argv)
 	// NB these arrays are *real* (not complex)
 	H_kinetic  = (double *)TRACEMALLOC(num_pw*sizeof(double));  
 	H_local = (double *)TRACEMALLOC(num_pw*sizeof(double));
-	c_init_H(num_pw,H_kinetic,H_local);
+	c_init_H(num_pw,num_wavevectors,H_kinetic,H_local);
 
 	/* ----------------------------------------------------
 		 | Perform full diagonalisation using LAPACK.       |
 		 | You will need to complete the function called    |
 		 ---------------------------------------------------- */
-	RESET_MEMSTATS();
+	//RESET_MEMSTATS();
 	mpi_printf(world_rank,"Starting full diagonalisation...\n\n");
 
 	init_cpu_time    = clock();
@@ -216,7 +229,9 @@ int main(int argc, char **argv)
 	// plane wave co-efficients for a single particle wavefunction and there
 	// are num_states particles.
 	//
-	trial_wvfn            = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
+	//trial_wvfn            = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
+	//trial_wvfn = (fftw_complex*) TRACEMALLOC(8*num_wavevectors*num_wavevectors*num_wavevectors*num_states);
+	trial_wvfn            = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*num_states*sizeof(fftw_complex));
 	gradient              = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
 	search_direction      = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
 	prev_search_direction = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
@@ -240,7 +255,7 @@ int main(int argc, char **argv)
 
 	// We start from a random guess for trial_wvfn
 	// this routine is in libhamiltonian
-	c_randomise_state(num_pw, num_states, trial_wvfn);
+	c_randomise_state(2*num_wavevectors+1, num_states, trial_wvfn);
 
 	// All the wavefunctions should be normalised and orthogonal to each other
 	// at every iteration. We enforce this in the initial random state here.
@@ -248,7 +263,7 @@ int main(int argc, char **argv)
 
 	// Apply the H to this state, store the result H.wvfn in gradient. As yet this is
 	// unconstrained, i.e. following this gradient will break orthonormality.
-	c_apply_H(num_pw, num_states, trial_wvfn, H_kinetic, H_local, gradient);
+	c_apply_H(2*num_wavevectors+1, num_states, trial_wvfn, H_kinetic, H_local, gradient);
 
 	// Compute the eigenvalues, i.e. the Rayleigh quotient for each eigenpair
 	// Note that we don't compute a denominator here because our trial states
@@ -302,48 +317,49 @@ int main(int argc, char **argv)
 		// preconditioning, implementation of conjugate gradients etc.
 
 		//* PRECON */
-		precondition(num_pw, num_states, search_direction, trial_wvfn, H_kinetic);
-		orthogonalise(num_pw, num_states, search_direction, trial_wvfn);
+		//precondition(num_pw, num_states, search_direction, trial_wvfn, H_kinetic);
+		//orthogonalise(num_pw, num_states, search_direction, trial_wvfn);
 
-		//Always calculate gT*g even on reset iteration - will need as gTxg_prev in
-		//next iteration
+		////Always calculate gT*g even on reset iteration - will need as gTxg_prev in
+		////next iteration
+		////gTxg_prev = gTxg;
+		//gTxg = 0.0;
+
+		//for(nb = 0; nb < num_states; nb++) {
+		//	offset = nb*num_pw;
+		//	for(i=0; i < num_pw; i++) {
+		//		gTxg += creal(conj(search_direction[offset+i])*gradient[offset+i]);
+		//	}
+		//}
+
+		//if (reset_sd!=0) {
+		//	gamma = gTxg/gTxg_prev;
+		//	for (nb=0;nb<num_states;nb++) {
+		//		offset = nb*num_pw;
+		//		for (i=0;i<num_pw;i++) {
+		//			search_direction[offset+i] += gamma*prev_search_direction[offset+i];
+		//		}
+		//	}
+
+		//	orthogonalise(num_pw,num_states,search_direction,trial_wvfn);
+		//}
+
 		//gTxg_prev = gTxg;
-		gTxg = 0.0;
-
-		for(nb = 0; nb < num_states; nb++) {
-			offset = nb*num_pw;
-			for(i=0; i < num_pw; i++) {
-				gTxg += creal(conj(search_direction[offset+i])*gradient[offset+i]);
-			}
-		}
-
-		if (reset_sd!=0) {
-			gamma = gTxg/gTxg_prev;
-			for (nb=0;nb<num_states;nb++) {
-				offset = nb*num_pw;
-				for (i=0;i<num_pw;i++) {
-					search_direction[offset+i] += gamma*prev_search_direction[offset+i];
-				}
-			}
-
-			orthogonalise(num_pw,num_states,search_direction,trial_wvfn);
-		}
-
-		gTxg_prev = gTxg;
 		for(i=0;i<num_pw*num_states;i++) { prev_search_direction[i] = search_direction[i]; }
 		// Search along this direction for the best approx. eigenvectors, i.e. the lowest energy.
-		line_search(num_pw,num_states,trial_wvfn,H_kinetic,H_local,search_direction,gradient,eigenvalue,&energy);
+		line_search(2*num_wavevectors+1,num_states,trial_wvfn,H_kinetic,H_local,search_direction,gradient,eigenvalue,&energy);
 
 		// Check convergence
-		if(fabs(prev_energy-energy)<energy_tol) {
-			mpi_printf(world_rank,"+-----------+----------------+-----------------+\n");
-			mpi_printf(world_rank,"Eigenvalues converged\n");
-			break;
-		}
+		//if(fabs(prev_energy-energy)<energy_tol) {
+		//	mpi_printf(world_rank,"+-----------+----------------+-----------------+\n");
+		//	mpi_printf(world_rank,"Eigenvalues converged\n");
+		//	break;
+		//}
 		if(fabs(prev_energy-energy)<energy_tol) {
 			if(reset_sd==0){
 				mpi_printf(world_rank,"+-----------+----------------+-----------------+\n");
-				mpi_printf(world_rank,"Eigenvalues converged\n");
+				mpi_printf(world_rank,"Eigenvalues convergered\n");
+				printf("%f - %f\n", prev_energy, energy);
 				break;
 			} else {
 				reset_sd = 0;
@@ -804,6 +820,7 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	double denergy_dstep;
 	double mean_norm,inv_mean_norm,tmp_sum;
 	int i,loop,nb,np,offset;
+	int num_pw2 = num_pw*num_pw;
 
 	// C doesn't have a nice epsilon() function like Fortran, so
 	// we use a lapack routine for this.
@@ -815,9 +832,9 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	// To try to keep a convenient step length, we reduce the size of the search direction
 	mean_norm = 0.0;
 	for (nb=0;nb<num_states;nb++) {
-		offset=nb*num_pw;
+		offset=nb*num_pw2;
 		tmp_sum = 0.0;
-		for (np=0;np<num_pw;np++) {
+		for (np=0;np<num_pw2;np++) {
 			// NOTE apparently taking mean_norm as sum(abs(direction)) converged
 			// faster than the original? Why?
 			//mean_norm += cabs(direction[offset+np]);
@@ -829,14 +846,14 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	mean_norm     = mean_norm/(double)num_states;
 	inv_mean_norm = 1.0/mean_norm;
 
-	for(i=0;i<num_pw*num_states;i++) { direction[i] = direction[i]*inv_mean_norm; }
+	for(i=0;i<num_pw2*num_states;i++) { direction[i] = direction[i]*inv_mean_norm; }
 
 	// The rate-of-change of the energy is just 2*Re{direction.gradient}
 	denergy_dstep = 0.0;
 	for (nb=0;nb<num_states;nb++) {
-		offset = num_pw*nb;
+		offset = num_pw2*nb;
 		tmp_sum = 0.0;
-		for (np=0;np<num_pw;np++) {
+		for (np=0;np<num_pw2;np++) {
 			// The complex dot-product is conjg(trial_wvfn)*gradient
 			// tmp_sum is the real part, so we only compute that
 			tmp_sum += creal(conj(direction[offset+np])*gradient[offset+np]);
@@ -844,7 +861,7 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 		denergy_dstep += 2.0*tmp_sum;
 	}
 
-	tmp_state = (fftw_complex *)TRACEMALLOC(num_pw*num_states*sizeof(fftw_complex));
+	tmp_state = (fftw_complex *)TRACEMALLOC(num_pw*num_pw*num_states*sizeof(fftw_complex));
 
 	best_step   = 0.0;
 	best_energy = *energy;
@@ -855,11 +872,11 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	// We find a trial step that lowers the energy:
 	for (loop=0;loop<10;loop++) {
 
-		for (i=0;i<num_pw*num_states;i++) {
+		for (i=0;i<num_pw2*num_states;i++) {
 			tmp_state[i]   = approx_state[i] + step*direction[i];
 		}
 
-		orthonormalise(num_pw,num_states,tmp_state);
+		orthonormalise(num_pw2,num_states,tmp_state);
 
 		// Apply the H to this state
 		c_apply_H(num_pw,num_states,tmp_state,H_kinetic,H_local,gradient);
@@ -867,9 +884,9 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 		// Compute the new energy estimate
 		tmp_energy = 0.0;
 		for (nb=0;nb<num_states;nb++) {
-			offset = num_pw*nb;
+			offset = num_pw2*nb;
 			tmp_sum = 0.0;
-			for (np=0;np<num_pw;np++) {
+			for (np=0;np<num_pw2;np++) {
 				// The complex dot-product a.b is conjg(a)*b
 				// tmp_sum is the real part, so we just compute that
 				tmp_sum += creal(conj(tmp_state[offset+np])*gradient[offset+np]);
@@ -925,9 +942,9 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	//    de/dx = de + 2*c*x
 
 
-	for (i=0;i<num_pw*num_states;i++) { approx_state[i] += opt_step*direction[i];}
+	for (i=0;i<num_pw2*num_states;i++) { approx_state[i] += opt_step*direction[i];}
 
-	orthonormalise(num_pw,num_states,approx_state);
+	orthonormalise(num_pw2,num_states,approx_state);
 
 	// Apply the H to this state
 	c_apply_H(num_pw,num_states,approx_state,H_kinetic,H_local,gradient);
@@ -935,9 +952,9 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 	// Compute the new energy estimate
 	*energy = 0.0;
 	for (nb=0;nb<num_states;nb++) {
-		offset = num_pw*nb;
+		offset = num_pw2*nb;
 		tmp_sum = 0.0;
-		for (np=0;np<num_pw;np++) {
+		for (np=0;np<num_pw2;np++) {
 			// The complex dot-product a.b is conjg(a)*b
 			// tmp_sum is just the real part, so we only compute that
 			tmp_sum += creal(conj(approx_state[offset+np])*gradient[offset+np]);
@@ -951,11 +968,11 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 		// if(best_step>0.0_dp) then
 		if (fabs(best_step-epsilon)>0.0) { // roughly machine epsilon in double precision
 
-			for (i=0;i<num_pw*num_states;i++) {
+			for (i=0;i<num_pw2*num_states;i++) {
 				approx_state[i] += best_step*direction[i];
 			}
 
-			orthonormalise(num_pw,num_states,approx_state);
+			orthonormalise(num_pw2,num_states,approx_state);
 
 			// Apply the H to this state
 			c_apply_H(num_pw,num_states,approx_state,H_kinetic,H_local,gradient);
@@ -963,9 +980,9 @@ void line_search(int num_pw ,int num_states, fftw_complex *approx_state,
 			// Compute the new energy estimate
 			*energy = 0.0;
 			for (nb=0;nb<num_states;nb++) {
-				offset = num_pw*nb;
+				offset = num_pw2*nb;
 				tmp_sum = 0.0;
-				for (np=0;np<num_pw;np++) {
+				for (np=0;np<num_pw2;np++) {
 					// The complex dot-product a.b is conjg(a)*b
 					// tmp_sum is just the real part, so we only compute that
 					tmp_sum += creal(conj(approx_state[offset+np])*gradient[offset+np]);

@@ -20,19 +20,72 @@ unsigned int seed;       // random number seed
 double random_double();
 
 
-void c_init_H(int num_pw, double *H_kinetic, double *H_nonlocal) {
-	int np;
+void c_init_H(int num_pw, int num_wavevectors, double *H_kinetic, double *H_local) {
+	int np, npx, npy, npz;
+	double cutoff = 0.5*num_wavevectors*num_wavevectors;
+	int ctr = 1;
+	double mod_sq;
 
-	H_kinetic[0] = 0.0;
+	num_pw = 2*num_wavevectors+1;
+	//int wv_v_3 = num_wavevectors*num_wavevectors*num_wavevectors-1;
+	int wv_v_2 = num_wavevectors*num_wavevectors;
 
-	for (np = 1; np < num_pw/2+1; np++) {
-		H_kinetic[np] = 0.5*(np)*(np);
-		H_kinetic[num_pw-np] = 0.5*(np)*(np);
+	//H_kinetic[0] = 0.0;
+
+	//for (np = 1; np < num_pw/2+1; np++) {
+	//for (npz = -num_wavevectors+1; npz < num_wavevectors; npz++) {
+	//	for (npy = -num_wavevectors+1; npy < num_wavevectors; npy++) {
+	//		for (npx = -num_wavevectors+1; npx < num_wavevectors; npx++) {
+	//for (npz = 0; npz < num_wavevectors; npz++) {
+		for (npy = 0; npy <= num_wavevectors; npy++) {
+			for (npx = 0; npx <= num_wavevectors; npx++) {
+				mod_sq = 0.5*(npx*npx+npy*npy);//+npz*npz);
+				if (npx == 0) {
+					H_kinetic[npy * num_pw] = mod_sq;
+					if (npy > 0) {
+						H_kinetic[(num_pw-npy)*num_pw] = mod_sq;
+					}
+				}
+				else {
+					H_kinetic[npy * num_pw+npx] = mod_sq;
+					H_kinetic[(npy+1) * num_pw-npx] = mod_sq;
+					if (npy > 0) {
+						H_kinetic[(num_pw-npy)*num_pw+npx] = mod_sq;
+						H_kinetic[(num_pw-npy+1)*num_pw-npx] = mod_sq;
+					}
+				}
+			}
+		}
+	//}
+	
+	printf("CTR: %d, NUM_PW:%d\n", ctr, num_pw);
+
+	//num_pw = 25;
+	printf("H_kinetic:\n");
+	printf("%d\n",wv_v_2);
+	for (npy = 0; npy < 2*num_wavevectors+1; npy++) {
+		for (npx = 0; npx < 2*num_wavevectors+1; npx++) {
+			printf("[%f]", H_kinetic[npy*num_pw+npx]);
+		}
+		printf("\n");
 	}
+	///for (npy = 0; npy <= num_wavevectors; npy++) {
+	///	for (npx = 0; npx <= num_wavevectors; npx++) {
+	///		//printf("%f|%f\n", H_kinetic[np], H_kinetic[num_pw-np]);
+	///		printf("[%f]",H_kinetic[ctr++]);
+	///		}
+	///	printf("\n");
+	///}
 
 	for (np = 0; np < num_pw; np++) {
-		H_nonlocal[np] = -0.37/(0.005+fabs(((1.0*np)/num_pw)-0.5));
+		H_local[np] = -0.37/(0.005+fabs(((1.0*np)/num_pw)-0.5));
+		//H_local[np1*num_pw*num_pw+np2*num_pw+np3] = -0.37/(0.005+fabs(((1.0*np1)/num_pw)-0.5));
 	}
+
+	//printf("H_local:\n");
+	//for (np = 0; np < num_pw; np++) {
+	//	printf("%f\n", H_local[np]);
+	//}
 
 }
 
@@ -40,33 +93,38 @@ void c_apply_H(int num_pw, int num_states, fftw_complex *state, double *H_kineti
 
 	int nb, np;
 
+	int64_t rnorm = num_pw*num_pw;
+
 	fftw_plan plan_forward, plan_backward;
 
 	fftw_complex *tmp_state = NULL, *tmp_state_in = NULL;
 
-	tmp_state = TRACEFFTW_MALLOC(num_pw*sizeof(fftw_complex));
-	tmp_state_in = TRACEFFTW_MALLOC(num_pw*sizeof(fftw_complex));
+	tmp_state = TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
+	tmp_state_in = TRACEFFTW_MALLOC(num_pw*num_pw*sizeof(fftw_complex));
 	
-	plan_forward = fftw_plan_dft_1d(num_pw, tmp_state_in, tmp_state, FFTW_FORWARD, FFTW_ESTIMATE);
-	plan_backward = fftw_plan_dft_1d(num_pw, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
+	plan_forward = fftw_plan_dft_2d(num_pw, num_pw, tmp_state_in, tmp_state, FFTW_FORWARD, FFTW_ESTIMATE);
+	plan_backward = fftw_plan_dft_2d(num_pw, num_pw, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
 
 	for(nb = 0; nb < num_states; nb++) {
-		for(np = 0; np < num_pw; np++) {
-			tmp_state_in[np] = state[nb*num_pw+np];
+		for(np = 0; np < num_pw*num_pw; np++) {
+			tmp_state_in[np] = state[nb*num_pw*num_pw+np];
 		}
 
 		fftw_execute_dft(plan_forward, tmp_state_in, tmp_state);
 
-		for(np = 0; np < num_pw; np++){
-			tmp_state[np] = H_local[np]*tmp_state[np]/num_pw;
+		for(np = 0; np < num_pw*num_pw; np++){
+			tmp_state[np] = H_local[np]*tmp_state[np]/rnorm;
 		}
 
-		fftw_execute_dft(plan_backward, tmp_state, &H_state[nb*num_pw]);
+		fftw_execute_dft(plan_backward, tmp_state, &H_state[nb*num_pw*num_pw]);
 
-		for(np = 0; np < num_pw; np++) {
-			H_state[nb*num_pw+np] = H_state[nb*num_pw+np] + H_kinetic[np]*state[nb*num_pw+np];
+		for(np = 0; np < num_pw*num_pw; np++) {
+			H_state[nb*num_pw*num_pw+np] = H_state[nb*num_pw*num_pw+np] + H_kinetic[np]*state[nb*num_pw*num_pw+np];
 		}
 	}
+
+	fftw_destroy_plan(plan_forward);
+	fftw_destroy_plan(plan_backward);
 
 
 	TRACEFFTW_FREE(tmp_state);
@@ -157,23 +215,53 @@ void c_init_random_seed() {
 void c_randomise_state(int num_pw, int num_states, fftw_complex *state)
 {
 	double rnd1, rnd2;
-	int nb, np;
+	int nb, npx, npy, npz;
+	//int ctr;
+
+	int num_wavevectors = num_pw/2; // woot for floor()
+	fftw_complex rand_cmplx;
 
 	for (nb = 0; nb < num_states; nb++) {
-		rnd1 = random_double();
-		//state[nb][0] = (rnd1+0.0*I);
-		state[nb*num_pw] = (rnd1+0.0*I);
+		//rnd1 = random_double();
+		rand_cmplx = (random_double()+0.0*I);
+		//ctr = 1;
 
-		for (np = 1; np < num_pw/2+1; np++) {
-			rnd1 = random_double();
-			rnd2 = random_double();
-			//state[nb][np] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
-			state[nb*num_pw+np] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
-			//cmplx conjg
-			//state[nb][num_pw-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
-			state[(nb+1)*num_pw-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
+		for (npy = 0; npy <= num_wavevectors; npy++) {
+			for (npx = 0; npx <= num_wavevectors; npx++) {
+				//rand_cmplx = 0.5*(npx*npx+npy*npy);//+npz*npz);
+				if (npx == 0) {
+					state[nb*num_pw*num_pw+npy * num_pw] = rand_cmplx;
+					if (npy > 0) {
+						state[nb*num_pw*num_pw+(num_pw-npy)*num_pw] = -rand_cmplx;
+					}
+				}
+				else {
+					state[nb*num_pw*num_pw+npy * num_pw+npx] = rand_cmplx;
+					state[nb*num_pw*num_pw+(npy+1) * num_pw-npx] = conj(rand_cmplx);
+					if (npy > 0) {
+						state[nb*num_pw*num_pw+(num_pw-npy)*num_pw+npx] = -rand_cmplx;
+						state[nb*num_pw*num_pw+(num_pw-npy+1)*num_pw-npx] = -conj(rand_cmplx);
+					}
+				}
+				rand_cmplx = (random_double()+random_double()*I);
+			}
 		}
+
+//		//for (npz = -num_wavevectors; npz <= num_wavevectors; npz++) {
+//			for (npy = 0; npy < num_pw; npy++) {
+//				for (npx = 0; npx < num_pw; npx++) {
+//					//if (npz== 0 && npy== 0 && npx==0) continue;
+//					rnd1 = random_double();
+//					rnd2 = random_double();
+//					state[nb*num_pw+ctr] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
+//					//cmplx conjg
+//					//state[nb*num_pw*num_pw*num_pw+((num_pw-npz)*num_pw*num_pw)+(num_pw-npy)*num_pw-npx] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
+//					//state[(nb+1)*num_pw-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
+//				}
+//			}
+//		//}
 	}
+
 }
 
 /* double c_line_search (int num_pw, int num_states, double *approx_state, double *H_kinetic, double *H_nonlocal, double *direction, double dumenergy) { */

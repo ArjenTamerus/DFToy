@@ -122,7 +122,7 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
-	int elpa_blocksize = 128;
+	int elpa_blocksize = 32;
 
 	elpa_set(elpa_handle, "na", num_pw, &status);
 	elpa_set(elpa_handle, "nev", num_pw, &status);

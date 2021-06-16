@@ -54,7 +54,7 @@ int numroc_(int *N, int *NB, int *iproc, int *isrcproc, int *nprocs);
 void pzgemr2d_(int *m, int *n, fftw_complex *A, int *ia, int *ja, int *desca, fftw_complex *B, int *ib, int *jb, int *descb, int *ictxt);
 
 // C interface to init_H
-void c_init_H(int num_pw, double *H_kinetic, double *H_nonlocal);
+void c_init_H(int num_pw, int num_wavevectors, double *H_kinetic, double *H_nonlocal);
 
 // C interface to apply_H
 void c_apply_H(int num_pw, int num_states, fftw_complex *state, double *H_kinetic, double *H_nonlocal, fftw_complex *H_state);
