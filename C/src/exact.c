@@ -1,0 +1,111 @@
+#include <stdbool.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <complex.h>
+#include <fftw3.h>
+#include <math.h>
+#include <lapacke.h>
+#include "interfaces.h"
+
+void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic, double *H_local, int num_plane_waves)
+{
+	fftw_complex *tmp_state_1, *tmp_state_2;
+	fftw_plan plan_forward, plan_backward;
+
+	int i, j;
+	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
+
+	printf("Constructing full Hamiltonian...\n");
+
+	tmp_state_1 = calloc(num_pw_3d, sizeof(fftw_complex));
+	tmp_state_2 = calloc(num_pw_3d, sizeof(fftw_complex));
+
+	plan_forward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_1, tmp_state_2,
+			FFTW_FORWARD, FFTW_ESTIMATE);
+	plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_1, tmp_state_2,
+			FFTW_BACKWARD, FFTW_ESTIMATE);
+
+	for(i = 0; i < num_pw_3d; i++) {
+
+		for(j = 0; j < num_pw_3d; j++) {
+			tmp_state_1[j] = 0+0*I;
+		}
+		tmp_state_1[i] = 1+0*I;
+
+		fftw_execute_dft(plan_forward, tmp_state_1, tmp_state_2);
+
+		for(j = 0; j < num_pw_3d; j++) {
+			tmp_state_2[j] *= H_local[j]/num_pw_3d;
+		}
+
+		fftw_execute_dft(plan_backward, tmp_state_2, tmp_state_1);
+
+		for(j = 0; j < num_pw_3d; j++) {
+			full_H[i*num_pw_3d+j] = tmp_state_1[j];
+		}
+		
+	}
+
+	for(i = 0; i < num_pw_3d; i++) {
+		full_H[i*num_pw_3d+i] += H_kinetic[i]+0*I;
+	}
+
+	fftw_destroy_plan(plan_forward);
+	fftw_destroy_plan(plan_backward);
+
+	free(tmp_state_1);
+	free(tmp_state_2);
+}
+
+void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
+{
+	int diag_mode = get_diag_mode();
+	switch (diag_mode) {
+		case 1:
+			diag_zheevd(full_H, eigenvalues, num_plane_waves);
+			break;
+		case 2:
+			//diag_zheevr(num_pw, num_states, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 3:
+			//diag_pzheev(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 4:
+			//diag_pzheevd(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 5:
+			//diag_pzheevr(num_pw, num_states, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 8:
+			//diag_elpa(num_pw, H_kinetic, H_local, full_eigenvalue);
+			break;
+		case 0:
+		default:
+			diag_zheev(full_H, eigenvalues, num_plane_waves);
+			break;
+	};
+}
+
+//void diag_zheev(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
+//{
+//	int err;
+//
+//	printf("Performing exact diagonalisation with ZHEEV...\n");
+//
+//	err = LAPACKE_zheev(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H, num_plane_waves, eigenvalues);
+//
+//	if(err) printf("ZHEEV error: %d\n", err);
+//
+//}
+
+void report_eigenvalues(double *eigenvalues, int num_states)
+{
+	int i;
+	printf("==========================\n");
+	printf("== EIGENSTATES REPORT   ==\n");
+	printf("==========================\n");
+	for(i = 0; i < num_states; i++) {
+		printf("== | %d | %f |\t==\n", i, eigenvalues[i]);
+	}
+	printf("==========================\n");
+}

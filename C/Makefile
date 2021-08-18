@@ -1,14 +1,13 @@
 # Lines for GNU
 OMPI_CC=gcc
-CC=mpicc -g
-#LAPACKLIBS=-llapack -lblas
-LAPACKLIBS= -lelpa -lscalapack -lopenblas -lgfortran
-#LAPACKLIBS=`pkg-config --libs mkl-dynamic-lp64-seq`
-#LAPACKLIBS=-DMKL_ILP64 -I/opt/intel/mkl/include -L/opt/intel/mkl/lib/intel64 -lmkl_scalapack_lp64 -Wl,--no-as-needed -lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core -lmkl_blacs_intelmpi_lp64 -lgomp -lpthread -lm -ldl
+CC=mpicc
+CFLAGS=-std=c99 -g -O3
+LAPACKLIBS=-llapacke
 LIBS= $(LAPACKLIBS) -lfftw3 -lm
-INCFLAGS= -I/home/at748/elpa/include/elpa-2020.11.001 -I/home/at748/fftw/a/include/ -I/usr/include/ -I./include
-LDFLAGS= -L/home/at748/elpa/lib -L/home/at748/fftw/a/lib -L. -Wl,-rpath=. -Bdynamic $(LIBS)
-#LDFLAGS=-L/home/at748/fftw/a/lib -L. -Wl,-rpath=. -Bdynamic -DMKL_LP64 -I/opt/intel/mkl/include -L/opt/intel/mkl/lib/intel64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl -lfftw3
+INCFLAGS=-I/usr/include/ -I./include
+LDFLAGS=-L./ofiles
+#LDFLAGS=-L. -Wl,-rpath=. -Bdynamic $(LIBS)
+
 TARGET=.
 SOLVERS_CPU=TRUE
 export SOLVERS_CPU
@@ -21,9 +20,9 @@ TOYCODE_DIAG?=PZHEEV
 all: eigensolver 
 	echo "libs:" $(LIBS)
 
+#eigensolver: lib solvers
 eigensolver: lib solvers
-	$(CC) -g -O3 ${INCFLAGS} -c src/eigensolver.c  $(LIBS) $(LDFLAGS)
-	$(CC) -g -O3  -o eigensolver *.o  $(LIBS) $(LDFLAGS)
+	$(CC) -o eigensolver ofiles/*.o  $(LIBS) $(LDFLAGS)
 
 
 solvers:
@@ -31,11 +30,14 @@ solvers:
 	#$(CC) -g  ${INCFLAGS}  $(LDFLAGS) -c -fPIC src/solvers/cpu/diag.c
 
 lib:
-	$(CC) -g  ${INCFLAGS}  $(LDFLAGS) -c -fPIC src/c_interface.c
-	$(CC) -g  ${INCFLAGS}  $(LDFLAGS) -c -fPIC src/trace.c
+	mkdir -p ofiles
+	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/main.o -c src/main.c
+	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/exact.o -c src/exact.c
+	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/iterative.o -c src/iterative.c
+	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/trace.o -c src/trace.c
 
 clean:
-	rm -f *.a *.o *.so
+	rm -rf ofiles
 	rm eigensolver
 
 run:
