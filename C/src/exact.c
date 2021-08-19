@@ -7,7 +7,40 @@
 #include <lapacke.h>
 #include "interfaces.h"
 
-void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic, double *H_local, int num_plane_waves)
+fftw_complex *exact_solver(int num_plane_waves, int num_states,
+		double *H_kinetic, double *H_local, bool save_exact_state)
+{
+	fftw_complex *full_H;
+	double *eigenvalues;
+
+	int num_plane_waves_3D = num_plane_waves * num_plane_waves * num_plane_waves;
+
+	printf("Calculating exact state.\n");
+
+	full_H = calloc(num_plane_waves_3D * num_plane_waves_3D, sizeof(fftw_complex));
+	eigenvalues = calloc(num_plane_waves_3D, sizeof(double));
+
+	construct_hamiltonian(full_H, H_kinetic, H_local, num_plane_waves);
+
+	diagonalise_exact_solution(full_H, eigenvalues, num_plane_waves_3D);
+
+	report_eigenvalues(eigenvalues, num_states);
+
+	free(eigenvalues);
+
+	if (save_exact_state) {
+		return full_H;
+	}
+	else {
+		free(full_H);
+
+		return NULL;
+	}
+
+}
+
+void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic,
+		double *H_local, int num_plane_waves)
 {
 	fftw_complex *tmp_state_1, *tmp_state_2;
 	fftw_plan plan_forward, plan_backward;
@@ -20,10 +53,10 @@ void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic, double *H_lo
 	tmp_state_1 = calloc(num_pw_3d, sizeof(fftw_complex));
 	tmp_state_2 = calloc(num_pw_3d, sizeof(fftw_complex));
 
-	plan_forward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_1, tmp_state_2,
-			FFTW_FORWARD, FFTW_ESTIMATE);
-	plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_1, tmp_state_2,
-			FFTW_BACKWARD, FFTW_ESTIMATE);
+	plan_forward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves,
+			num_plane_waves, tmp_state_1, tmp_state_2, FFTW_FORWARD, FFTW_ESTIMATE);
+	plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves,
+			num_plane_waves, tmp_state_1, tmp_state_2, FFTW_BACKWARD, FFTW_ESTIMATE);
 
 	for(i = 0; i < num_pw_3d; i++) {
 
@@ -57,9 +90,11 @@ void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic, double *H_lo
 	free(tmp_state_2);
 }
 
-void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
+void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
+		int num_plane_waves)
 {
 	int diag_mode = get_diag_mode();
+
 	switch (diag_mode) {
 		case 1:
 			diag_zheevd(full_H, eigenvalues, num_plane_waves);
@@ -86,21 +121,10 @@ void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues, int n
 	};
 }
 
-//void diag_zheev(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
-//{
-//	int err;
-//
-//	printf("Performing exact diagonalisation with ZHEEV...\n");
-//
-//	err = LAPACKE_zheev(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H, num_plane_waves, eigenvalues);
-//
-//	if(err) printf("ZHEEV error: %d\n", err);
-//
-//}
-
 void report_eigenvalues(double *eigenvalues, int num_states)
 {
 	int i;
+
 	printf("==========================\n");
 	printf("== EIGENSTATES REPORT   ==\n");
 	printf("==========================\n");

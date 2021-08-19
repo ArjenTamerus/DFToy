@@ -10,14 +10,13 @@
 int main(int argc, char **argv)
 {
 	double *H_kinetic, *H_local;
-	double *eigenvalues;
-	fftw_complex *full_H;
+	fftw_complex *full_H = NULL;
 	int num_wave_vectors, num_plane_waves;
 	int num_pw_3d;
 	int num_states;
 	int diagonalisation_method;
 
-	bool run_exact = true, run_iterative = true;
+	bool run_exact = true, run_iterative = true, keep_exact = false;
 
 	num_wave_vectors = 3;
 	num_plane_waves = 2*num_wave_vectors+1;
@@ -36,20 +35,8 @@ int main(int argc, char **argv)
 	init_local(H_local, num_plane_waves);
 
 	if (run_exact) {
-		printf("Calculating exact state.\n");
-
-		full_H = calloc(num_pw_3d * num_pw_3d, sizeof(fftw_complex));
-		eigenvalues = calloc(num_pw_3d, sizeof(double));
-
-		construct_hamiltonian(full_H, H_kinetic, H_local, num_plane_waves);
-
-		diagonalise_exact_solution(full_H, eigenvalues, num_pw_3d);
-
-		report_eigenvalues(eigenvalues, num_states);
-	}
-	else {
-		full_H = NULL;
-		eigenvalues = NULL;
+		full_H = exact_solver(num_plane_waves, num_states, H_kinetic, H_local,
+				keep_exact); 
 	}
 
 	if (run_iterative) {
@@ -58,9 +45,8 @@ int main(int argc, char **argv)
 		iterative_solver(num_plane_waves, num_states, H_kinetic, H_local, full_H);
 	}
 
-	if (run_exact) {
+	if (full_H) {
 		free(full_H);
-		free(eigenvalues);
 	}
 
 	free(H_kinetic);

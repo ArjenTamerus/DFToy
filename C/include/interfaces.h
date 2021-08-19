@@ -1,11 +1,18 @@
+#include <stdbool.h>
+#include <complex.h>
 #include <fftw3.h>
+
 void init_kinetic(double *H_kin, int num_plane_waves);
 void init_local(double *H_loc, int num_plane_waves);
+
+// Exact solver routines
+fftw_complex *exact_solver(int num_plane_waves, int num_states,
+		double *H_kinetic, double *H_local, bool save_exact_state);
 void construct_hamiltonian(fftw_complex *full_H, double *H_kin, double *H_loc, int num_plane_waves);
 void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues, int num_plane_waves);
 void report_eigenvalues(double *eigenvalues, int num_states);
 
-// iterative solver
+// iterative solver routines
 void iterative_solver(int num_plane_waves, int num_states,
 		double *H_kinetic, double *H_local, fftw_complex *exact_state);
 void randomise_state(int num_plane_waves, int num_states, fftw_complex *trial_wvfn);
