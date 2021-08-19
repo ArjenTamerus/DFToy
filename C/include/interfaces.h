@@ -11,7 +11,7 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 void construct_hamiltonian(fftw_complex *full_H, double *H_kin, double *H_loc,
 		int num_plane_waves);
 void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
-		int num_plane_waves);
+		int num_plane_waves, int num_states);
 void report_eigenvalues(double *eigenvalues, int num_states);
 
 // iterative solver routines

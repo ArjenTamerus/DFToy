@@ -2,7 +2,7 @@
 OMPI_CC=gcc
 CC=mpicc
 CFLAGS=-std=c99 -g -O3
-LAPACKLIBS=-llapacke
+LAPACKLIBS=-lscalapack-openmpi -llapacke
 LIBS= $(LAPACKLIBS) -lfftw3 -lm
 INCFLAGS=-I/usr/include/ -I./include
 LDFLAGS=-L./ofiles

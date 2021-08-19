@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <complex.h>
+#include <mpi.h>
 #include <fftw3.h>
 #include <math.h>
 #include <lapacke.h>
@@ -14,7 +15,7 @@ int main(int argc, char **argv)
 	int num_wave_vectors, num_plane_waves;
 	int num_pw_3d;
 	int num_states;
-	int diagonalisation_method;
+	//int diagonalisation_method;
 
 	bool run_exact = true, run_iterative = true, keep_exact = false;
 
@@ -27,6 +28,9 @@ int main(int argc, char **argv)
 	printf("num_wave_vectors:\t%d\n", num_wave_vectors);
 	printf("num_plane_waves:\t%d\n", num_plane_waves);
 	printf("num_pw_3d:\t\t%d\n", num_pw_3d);
+
+	// Right now, MPI is only used for scaLAPACK routines
+	MPI_Init(&argc, &argv);
 
 	H_kinetic = calloc(num_pw_3d, sizeof(double));
 	H_local = calloc(num_pw_3d, sizeof(double));
@@ -52,6 +56,7 @@ int main(int argc, char **argv)
 	free(H_kinetic);
 	free(H_local);
 
+	MPI_Finalize();
 
 	printf("Done.\n");
 	

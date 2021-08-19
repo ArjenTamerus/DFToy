@@ -23,7 +23,8 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 
 	construct_hamiltonian(full_H, H_kinetic, H_local, num_plane_waves);
 
-	diagonalise_exact_solution(full_H, eigenvalues, num_plane_waves_3D);
+	diagonalise_exact_solution(full_H, eigenvalues, num_plane_waves_3D,
+			num_states);
 
 	report_eigenvalues(eigenvalues, num_states);
 
@@ -92,7 +93,7 @@ void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic,
 }
 
 void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
-		int num_plane_waves)
+		int num_plane_waves, int num_states)
 {
 	int diag_mode = get_diag_mode();
 
@@ -101,10 +102,10 @@ void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
 			diag_zheevd(full_H, eigenvalues, num_plane_waves);
 			break;
 		case 2:
-			//diag_zheevr(num_pw, num_states, H_kinetic, H_local, full_eigenvalue);
+			diag_zheevr(full_H, eigenvalues, num_plane_waves, num_states);
 			break;
 		case 3:
-			//diag_pzheev(num_pw, H_kinetic, H_local, full_eigenvalue);
+			diag_pzheev(full_H, eigenvalues, num_plane_waves);
 			break;
 		case 4:
 			//diag_pzheevd(num_pw, H_kinetic, H_local, full_eigenvalue);
