@@ -57,7 +57,8 @@ void diag_zheev(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
 
 	printf("Performing exact diagonalisation with ZHEEV...\n");
 
-	err = LAPACKE_zheev(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H, num_plane_waves, eigenvalues);
+	err = LAPACKE_zheev(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H,
+			num_plane_waves, eigenvalues);
 
 	if(err) {
 		int rank;
@@ -73,7 +74,8 @@ void diag_zheevd(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
 
 	printf("Performing exact diagonalisation with ZHEEVD...\n");
 
-	err = LAPACKE_zheevd(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H, num_plane_waves, eigenvalues);
+	err = LAPACKE_zheevd(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H,
+			num_plane_waves, eigenvalues);
 
 	if(err) {
 		int rank;

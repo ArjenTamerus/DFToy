@@ -15,9 +15,6 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 	double *eigenvalues;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	//int ns, pw;
-	//double exact_energy;
-
 	printf("Starting iterative solver\n");
 
 	init_seed();
@@ -37,9 +34,11 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 
 	orthonormalise(num_pw_3d, num_states, trial_wvfn);
 
-	apply_hamiltonian(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local, gradient);
+	apply_hamiltonian(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
+			gradient);
 
-	calculate_eigenvalues(num_pw_3d, num_states, trial_wvfn, gradient, eigenvalues);
+	calculate_eigenvalues(num_pw_3d, num_states, trial_wvfn, gradient,
+			eigenvalues);
 
 	iterative_search(num_plane_waves, num_states, H_kinetic, H_local, trial_wvfn,
 			gradient, rotation, eigenvalues);
@@ -60,18 +59,6 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 
 	printf("Randomise state\n");
 
-	//for (ns = 0; ns < num_states; ns++) {
-	//	rnd1 = random_double();
-	//	state[ns*num_plane_waves] = (rnd1+0.0*I);
-
-	//	for (np = 1; np < num_plane_waves/2+1; np++) {
-	//		rnd1 = random_double();
-	//		rnd2 = random_double();
-	//		state[ns*num_pw_3d+np] = 2*((rnd1-0.5)+(rnd2-0.5)*I);
-	//		//cmplx conjg
-	//		state[(ns+1)*num_pw_3d-np] = 2*((rnd1-0.5)-2*(rnd2-0.5)*I);
-	//	}
-	//}
 	int x, y, z;
 	int idx_, idy_, pos;
 	int offset, offset_ns;
@@ -98,19 +85,15 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 					rand_val = 2*(rnd1 + rnd2*I);
 
 					pos = y * num_plane_waves + x;
-					//printf("posa: %d\n", pos);
 					state[offset+pos] = rand_val;
 
 					pos = (y+1) * num_plane_waves - x - 1;
-					//printf("posb: %d\n", pos);
 					state[offset+pos] = conj(rand_val);
 
 					pos = num_pw_2d - ((y+1) * num_plane_waves - x);
-					//printf("posc: %d\n", pos);
 					state[offset+pos] = -rand_val;
 
 					pos = num_pw_2d - (y * num_plane_waves + x)-1;
-					//printf("posd: %d\n", pos);
 					state[offset+pos] = -conj(rand_val);
 				}
 
@@ -120,38 +103,6 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 
 	}
 
-	//for(ns = 0; ns < num_states; ns++) {
-
-
-	//	for(z = 0; z < num_plane_waves; z++) {
-
-	//		for(y = 0; y < num_plane_waves; y++) {
-
-	//			for(x = 0; x < num_plane_waves; x++) {
-	//				pos = (ns * num_pw_3d) + z * num_plane_waves * num_plane_waves + y * num_plane_waves + x;
-
-	//				printf("[%f]", creal(state[pos]));
-	//			}
-
-	//			printf("\n");
-	//		}
-	//		printf("\n");
-	//	}
-	//}
-	//		printf("\n");
-	//for(ns = 0; ns < num_states; ns++) {
-
-	//	for(y = 0; y < num_plane_waves; y++) {
-
-	//		for(x = 0; x < num_plane_waves; x++) {
-	//			pos = (ns * num_pw_3d) + y * num_plane_waves + x;
-
-	//			printf("[%f]", cimag(state[pos]));
-	//		}
-
-	//		printf("\n");
-	//	}
-	//}
 }
 
 void take_exact_state(int num_plane_waves, int num_states,
@@ -160,7 +111,8 @@ void take_exact_state(int num_plane_waves, int num_states,
 	int np;
 
 	if (!exact_state) {
-		fprintf(stderr, "(EE) Exact state undefined, did you run the exact solver? Exiting.\n");
+		fprintf(stderr, "(EE) Exact state undefined, did you run the exact solver?"
+				"\nExiting with failed state.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -172,7 +124,8 @@ void take_exact_state(int num_plane_waves, int num_states,
 
 }
 
-void orthonormalise(int num_plane_waves, int num_states, fftw_complex *trial_wvfn)
+void orthonormalise(int num_plane_waves, int num_states, fftw_complex
+		*trial_wvfn)
 {
 	fftw_complex *overlap;
 	int ns1, ns2, pw;
@@ -191,7 +144,8 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex *trial_wvf
 			overlap[ns2*num_states+ns1] = 0.0+0.0*I;
 
 			for (pw = 0; pw < num_plane_waves; pw++) {
-				overlap[ns2*num_states+ns1] += conj(trial_wvfn[offset_ns1+pw])*trial_wvfn[offset_ns2+pw];
+				overlap[ns2*num_states+ns1] += conj(trial_wvfn[offset_ns1+pw])
+					* trial_wvfn[offset_ns2+pw];
 			}
 		}
 	}
@@ -204,7 +158,8 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex *trial_wvf
 	}
 
 	// invert
-	err = LAPACKE_ztrtri(LAPACK_COL_MAJOR, 'U', 'N', num_states, overlap, num_states);
+	err = LAPACKE_ztrtri(LAPACK_COL_MAJOR, 'U', 'N', num_states, overlap,
+			num_states);
 	if (err) {
 		printf("ztrtri failed: %d\n", err);
 		exit(EXIT_FAILURE);
@@ -225,7 +180,8 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex *trial_wvf
 	free(overlap);
 }
 
-void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state, fftw_complex *ref_state) {
+void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
+		fftw_complex *ref_state) {
 	fftw_complex overlap;
 	int ref_state_offset;
 	int state_offset;
@@ -250,7 +206,8 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state, fft
 				local_ref_state_offset = ref_state_offset+pw;
 				local_state_offset = state_offset+pw;
 
-				overlap += conj(ref_state[local_ref_state_offset])*state[local_state_offset];
+				overlap += conj(ref_state[local_ref_state_offset])
+					* state[local_state_offset];
 
 			}
 			
@@ -266,7 +223,9 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state, fft
 
 }
 
-void precondition(int num_plane_waves, int num_states, fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic) {
+void precondition(int num_plane_waves, int num_states,
+		fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic)
+{
 	/* |-------------------------------------------------|
 		 | This subroutine takes a search direction and    |
 		 | applies a simple kinetic energy-based           |
@@ -278,8 +237,6 @@ void precondition(int num_plane_waves, int num_states, fftw_complex *search_dire
 	double kinetic_eigenvalue;
 	double x, tmp; 
 
-	//fftw_double *trial_wvfn = (fftw_complex *)trial_wvfn_d;
-
 	for (ns = 0;ns < num_states; ns++) {
 		/* |---------------------------------------------------------------------|
 			 | You need to compute the kinetic energy "eigenvalue" for state ns.   |
@@ -290,10 +247,11 @@ void precondition(int num_plane_waves, int num_states, fftw_complex *search_dire
 			 |                                                                     |
 			 | where "^+" means take the Hermitian conjugate (transpose it and     |
 			 | take the complex conjugate of each element). H_kinetic is a         |
-			 | diagonal matrix, so rather than store a num_plane_waves x num_plane_waves matrix with |
-			 | most elements being zero, we instead just store the num_plane_waves non-zero |
-			 | elements in a 1D array. Thus the nth element of the result of       |
-			 | operating with the kinetic energy operator on the wavefunction is:  |
+			 | diagonal matrix, so rather than store a num_plane_waves *           |
+			 | num_plane_waves matrix with most elements being zero, we instead    |
+			 | just store the num_plane_waves non-zero elements in a 1D array.     |
+			 | Thus the nth element of the result of operating with the kinetic    |
+			 | energy operator on the wavefunction is:                             |
 			 |                                                                     |
 			 |     (H_kinetic trial_wvfn)(n) = H_kinetic(n)*trial_wvfn(n)          |
 			 |                                                                     |
@@ -303,20 +261,19 @@ void precondition(int num_plane_waves, int num_states, fftw_complex *search_dire
 		kinetic_eigenvalue = 0.0;
 
 		for (np = 0; np < num_plane_waves; np++) {
-			//kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+np] * trial_wvfn[offset+np];
-			kinetic_eigenvalue += H_kinetic[np] * creal(trial_wvfn[offset + np]) * creal(trial_wvfn[offset + np])
-				+ H_kinetic[np] * cimag(trial_wvfn[offset + np]) * cimag(trial_wvfn[offset + np]);
-			//kinetic_eigenvalue += H_kinetic[np] * trial_wvfn[offset+np+1] * trial_wvfn[offset+2*np+1];
+			kinetic_eigenvalue += H_kinetic[np]
+				* creal(trial_wvfn[offset + np]) * creal(trial_wvfn[offset + np])
+				+ H_kinetic[np] * cimag(trial_wvfn[offset + np])
+				* cimag(trial_wvfn[offset + np]);
 		}
 		
 		for (np = 0; np < num_plane_waves; np++) {
-			/* |---------------------------------------------------------------------|
-				 | You need to compute and apply the preconditioning, using the        |
-				 | estimate of trial_wvfn's kinetic energy computed above and the      |
-				 | kinetic energy associated with each plane-wave basis function       |
-				 |---------------------------------------------------------------------| */
+			/* |----------------------------------------------------------------|
+				 | You need to compute and apply the preconditioning, using the   |
+				 | estimate of trial_wvfn's kinetic energy computed above and the |
+				 | kinetic energy associated with each plane-wave basis function  |
+				 |----------------------------------------------------------------| */
 
-			// x = H_kin/E_kin
 			x = H_kinetic[np] / kinetic_eigenvalue;
 
 			// apply f(x) - keeping in mind search_direction is complex
@@ -335,7 +292,9 @@ void precondition(int num_plane_waves, int num_states, fftw_complex *search_dire
 }
 
 
-void diagonalise(int num_plane_waves,int num_states, fftw_complex *state, fftw_complex *H_state, double *eigenvalues, fftw_complex *rotation) {
+void diagonalise(int num_plane_waves,int num_states, fftw_complex *state,
+		fftw_complex *H_state, double *eigenvalues, fftw_complex *rotation)
+{
 	/* |-------------------------------------------------|
 		 | This subroutine takes a set of states and       |
 		 | H acting on those states, and transforms the    |
@@ -355,14 +314,16 @@ void diagonalise(int num_plane_waves,int num_states, fftw_complex *state, fftw_c
 			for (i=0;i<num_plane_waves;i++) {
 
 				// The complex dot-product a.b is conjg(a)*b
-				rotation[ns2*num_states+ns1] += conj(state[offset_ns1+i])*H_state[offset_ns2+i];
+				rotation[ns2*num_states+ns1] += 
+					conj(state[offset_ns1+i])*H_state[offset_ns2+i];
 
 			}
 		}
 	}
 
 	// Diagonalise to get eigenvectors and eigenvalues
-	err = LAPACKE_zheev(LAPACK_ROW_MAJOR, 'V', 'U', num_states, rotation, num_states, eigenvalues);
+	err = LAPACKE_zheev(LAPACK_ROW_MAJOR, 'V', 'U', num_states, rotation,
+			num_states, eigenvalues);
 
 	// Finally apply the diagonalising rotation to state
 	// (and also to H_state, to keep it consistent with state)
@@ -371,14 +332,13 @@ void diagonalise(int num_plane_waves,int num_states, fftw_complex *state, fftw_c
 
 }
 
-void transform(int num_plane_waves, int num_states, fftw_complex *state, fftw_complex *transformation)
+void transform(int num_plane_waves, int num_states, fftw_complex *state,
+		fftw_complex *transformation)
 {
 	fftw_complex *new_state;
 	int ns1, ns2, pw;
 	int offset_ns2, offset_ns1;
 	int err;
-
-	//printf("Applying linear transformation\n");
 
 	new_state = calloc(num_plane_waves * num_states, sizeof(fftw_complex));
 
@@ -389,7 +349,8 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state, fftw_co
 			offset_ns1 = ns1*num_plane_waves;
 
 			for(pw = 0; pw < num_plane_waves; pw++) {
-				new_state[offset_ns1 + pw] += state[offset_ns2 + pw] * transformation[ns1 * num_states + ns2];
+				new_state[offset_ns1 + pw] += state[offset_ns2 + pw]
+					* transformation[ns1 * num_states + ns2];
 			}
 
 		}
@@ -413,13 +374,13 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 	int ns, np;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	//printf("Applying Hamiltonian\n");
-
 	tmp_state = calloc(num_pw_3d,sizeof(fftw_complex));
 	tmp_state_in = calloc(num_pw_3d,sizeof(fftw_complex));
 	
-	plan_forward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_in, tmp_state, FFTW_FORWARD, FFTW_ESTIMATE);
-	plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
+	plan_forward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves,
+			num_plane_waves, tmp_state_in, tmp_state, FFTW_FORWARD, FFTW_ESTIMATE);
+	plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves,
+			num_plane_waves, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
 
 	for(ns = 0; ns < num_states; ns++) {
 		for(np = 0; np < num_pw_3d; np++) {
@@ -435,7 +396,8 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		fftw_execute_dft(plan_backward, tmp_state, &H_state[ns*num_pw_3d]);
 
 		for(np = 0; np < num_pw_3d; np++) {
-			H_state[ns*num_pw_3d+np] = H_state[ns*num_pw_3d+np] + H_kinetic[np]*state[ns*num_pw_3d+np];
+			H_state[ns*num_pw_3d+np] = H_state[ns*num_pw_3d+np] 
+				+ H_kinetic[np]*state[ns*num_pw_3d+np];
 		}
 	}
 
@@ -465,9 +427,10 @@ void init_seed()
 	}
 }
 
-void line_search(int num_plane_waves ,int num_states, fftw_complex *approx_state,
-		double *H_kinetic, double *H_local, fftw_complex *direction,
-		fftw_complex *gradient, double *eigenvalue, double *energy)
+void line_search(int num_plane_waves ,int num_states,
+		fftw_complex *approx_state, double *H_kinetic, double *H_local,
+		fftw_complex *direction, fftw_complex *gradient, double *eigenvalue,
+		double *energy)
 {
 	/*  |-------------------------------------------------|
 			| This subroutine takes an approximate eigenstate |
@@ -493,7 +456,8 @@ void line_search(int num_plane_waves ,int num_states, fftw_complex *approx_state
 	// we use a lapack routine for this.
 	epsilon = LAPACKE_dlamch('e');
 
-	// To try to keep a convenient step length, we reduce the size of the search direction
+	// To try to keep a convenient step length, we reduce the size of the search
+	// direction
 	mean_norm = 0.0;
 	for (ns = 0; ns < num_states; ns++) {
 		offset=ns*num_pw_3d;
@@ -552,7 +516,8 @@ void line_search(int num_plane_waves ,int num_states, fftw_complex *approx_state
 		orthonormalise(num_pw_3d,num_states,tmp_state);
 
 		// Apply the H to this state
-		apply_hamiltonian(num_plane_waves,num_states,tmp_state,H_kinetic,H_local,gradient);
+		apply_hamiltonian(num_plane_waves,num_states,tmp_state,H_kinetic,H_local,
+				gradient);
 
 		// Compute the new energy estimate
 		tmp_energy = 0.0;
@@ -634,7 +599,8 @@ void line_search(int num_plane_waves ,int num_states, fftw_complex *approx_state
 	orthonormalise(num_pw_3d,num_states,approx_state);
 
 	// Apply the H to this state
-	apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,H_local,gradient);
+	apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,H_local,
+			gradient);
 
 	// Compute the new energy estimate
 	*energy = 0.0;
@@ -656,9 +622,8 @@ void line_search(int num_plane_waves ,int num_states, fftw_complex *approx_state
 	// This ought to be the best, but check...
 	if (*energy > best_energy) {
 
-		// if(best_step>0.0_dp) then
-		if (fabs(best_step - epsilon) > 0.0) { // roughly machine epsilon in double precision
-
+		// Roughly machine epsilon in double precision
+		if (fabs(best_step - epsilon) > 0.0) {
 			for (i = 0; i < num_pw_3d*num_states; i++) {
 				approx_state[i] += best_step*direction[i];
 			}
@@ -666,7 +631,8 @@ void line_search(int num_plane_waves ,int num_states, fftw_complex *approx_state
 			orthonormalise(num_pw_3d,num_states,approx_state);
 
 			// Apply the H to this state
-			apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,H_local,gradient);
+			apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,
+					H_local,gradient);
 
 			// Compute the new energy estimate
 			*energy = 0.0;
@@ -713,8 +679,8 @@ void calculate_eigenvalues(int num_plane_waves, int num_states,
 
 		for (pw = 0; pw < num_plane_waves; pw++) {
 			// The complex dot-product is conjg(trial_wvfn)*gradient
-			// NB the eigenvalue is the real part of the product, so we only compute that
-			eigenvalues[ns] += creal(conj(state[offset + pw]) * gradient[offset + pw]);
+			// NB the eigenvalue is the real part of the product, so only compute that
+			eigenvalues[ns] += creal(conj(state[offset + pw])*gradient[offset + pw]);
 
 		}
 
@@ -743,7 +709,8 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
 	search_direction = calloc(num_pw_3d*num_states, sizeof(fftw_complex));
-	previous_search_direction = calloc(num_pw_3d*num_states, sizeof(fftw_complex));
+	previous_search_direction = calloc(num_pw_3d*num_states,
+			sizeof(fftw_complex));
 
 	printf("Starting iterative search @ tolerance of %1.0e\n", energy_tolerance);
 
@@ -773,13 +740,14 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 
 		// The steepest descent search direction is minus the gradient
 		for ( i = 0; i < num_pw_3d*num_states; i++) {
-			// cannot copy into previous_search_direction *here* because search_direction
-			// gets mangled inside the line_search function
+			// cannot copy into previous_search_direction *here* because
+			// search_direction gets mangled inside the line_search function
 			search_direction[i] = -gradient[i];
 		}
 
 		//* PRECON */
-		precondition(num_pw_3d, num_states, search_direction, trial_wvfn, H_kinetic);
+		precondition(num_pw_3d, num_states, search_direction, trial_wvfn,
+				H_kinetic);
 		orthogonalise(num_pw_3d, num_states, search_direction, trial_wvfn);
 
 		//Always calculate gT*g even on reset iteration - will need as gTxg_prev in
@@ -800,7 +768,8 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 				offset = ns*num_pw_3d;
 
 				for (i = 0;i < num_pw_3d; i++) {
-					search_direction[offset+i] += gamma*previous_search_direction[offset+i];
+					search_direction[offset+i] += gamma
+						* previous_search_direction[offset+i];
 				}
 
 			}
@@ -815,11 +784,14 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 			previous_search_direction[i] = search_direction[i];
 		}
 
-		// Search along this direction for the best approx. eigenvectors, i.e. the lowest energy.
-		line_search(num_plane_waves,num_states,trial_wvfn,H_kinetic,H_local,search_direction,gradient,eigenvalues,&total_energy);
+		// Search along this direction for the best approx. eigenvectors, i.e. the
+		// lowest energy.
+		line_search(num_plane_waves,num_states,trial_wvfn,H_kinetic,H_local,
+				search_direction,gradient,eigenvalues,&total_energy);
 
-		//if (check_convergence(previous_energy, total_energy, energy_tolerance, &reset_sd)) break;
-		if (check_convergence(previous_energy, total_energy, energy_tolerance)) break;
+		if (check_convergence(previous_energy, total_energy, energy_tolerance)) {
+			break;
+		}
 
 		if (iter%CG_RESET==0) reset_sd = 1;
 
@@ -829,12 +801,14 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 			total_energy += eigenvalues[ns];
 		}
 
-		printf("|     %4d  | % #14.8g |  % #14.8g |\n",iter,total_energy,previous_energy-total_energy); 
+		printf("|     %4d  | % #14.8g |  % #14.8g |\n",iter,total_energy,
+				previous_energy-total_energy); 
 
 	}
 }
 
-int check_convergence(double previous_energy, double total_energy, double tolerance)
+int check_convergence(double previous_energy, double total_energy,
+		double tolerance)
 {
 		if(fabs(previous_energy-total_energy)<tolerance) {
 				printf("+-----------+----------------+-----------------+\n");

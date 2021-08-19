@@ -48,7 +48,8 @@ int get_elpa_2stage_solver()
 	return ELPA_2STAGE_COMPLEX_AVX2_BLOCK2;
 }
 
-int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigenvalue)
+int diag_elpa(int num_pw, double *H_kinetic, double *H_local,
+		double *full_eigenvalue)
 {
 	fftw_complex *full_H;
 	fftw_complex *work;
@@ -103,13 +104,16 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 	int desc[9]; // apparently DLEN == 9
 	int desc_root[9]; // apparently DLEN == 9
 	fftw_complex *A = TRACEMALLOC((MLOC_A)*NLOC_A*sizeof(fftw_complex));
-	descinit_(desc, &num_pw, &num_pw, &MB, &NB, &zero, &zero, &blacs_ctxt, &LDA, &status);
+	descinit_(desc, &num_pw, &num_pw, &MB, &NB, &zero, &zero, &blacs_ctxt, &LDA,
+			&status);
 	if (world_rank == 0) {
-		descinit_(desc_root, &num_pw, &num_pw, &num_pw, &num_pw, &zero, &zero, &blacs_ctxt_root, &num_pw, &status);
+		descinit_(desc_root, &num_pw, &num_pw, &num_pw, &num_pw, &zero, &zero,
+				&blacs_ctxt_root, &num_pw, &status);
 	} else {
 		desc_root[1] = -1;
 	}
-	pzgemr2d_(&num_pw, &num_pw, full_H, &one, &one, desc_root, A, &one, &one, desc, &blacs_ctxt);
+	pzgemr2d_(&num_pw, &num_pw, full_H, &one, &one, desc_root, A, &one, &one,
+			desc, &blacs_ctxt);
 
 	if(elpa_init(20171201) != ELPA_OK) {
 		mpi_printf(world_rank, "UNSUPPORTED ELPA API\n");
@@ -129,7 +133,8 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 	elpa_set(elpa_handle, "local_nrows", MLOC_A, &status);
 	elpa_set(elpa_handle, "local_ncols", NLOC_A, &status);
 	elpa_set(elpa_handle, "nblk", elpa_blocksize, &status);
-	elpa_set(elpa_handle, "mpi_comm_parent", MPI_Comm_c2f(MPI_COMM_WORLD), &status);
+	elpa_set(elpa_handle, "mpi_comm_parent", MPI_Comm_c2f(MPI_COMM_WORLD),
+			&status);
 	elpa_set(elpa_handle, "process_row", myprow, &status);
 	elpa_set(elpa_handle, "process_col", mypcol, &status);
 	elpa_set(elpa_handle, "blacs_context", blacs_ctxt, &status);
@@ -144,6 +149,7 @@ int diag_elpa(int num_pw, double *H_kinetic, double *H_local, double *full_eigen
 	elpa_set(elpa_handle, "complex_kernel", solver, &status);
 
 
-	elpa_eigenvectors(elpa_handle, (double complex*)A, full_eigenvalue, A, &status);
+	elpa_eigenvectors(elpa_handle, (double complex*)A, full_eigenvalue, A,
+			&status);
 
 }

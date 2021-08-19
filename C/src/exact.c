@@ -17,7 +17,8 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 
 	printf("Calculating exact state.\n");
 
-	full_H = calloc(num_plane_waves_3D * num_plane_waves_3D, sizeof(fftw_complex));
+	full_H = calloc(num_plane_waves_3D * num_plane_waves_3D,
+			sizeof(fftw_complex));
 	eigenvalues = calloc(num_plane_waves_3D, sizeof(double));
 
 	construct_hamiltonian(full_H, H_kinetic, H_local, num_plane_waves);

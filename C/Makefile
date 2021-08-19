@@ -6,7 +6,6 @@ LAPACKLIBS=-llapacke
 LIBS= $(LAPACKLIBS) -lfftw3 -lm
 INCFLAGS=-I/usr/include/ -I./include
 LDFLAGS=-L./ofiles
-#LDFLAGS=-L. -Wl,-rpath=. -Bdynamic $(LIBS)
 
 TARGET=.
 SOLVERS_CPU=TRUE
@@ -27,7 +26,6 @@ eigensolver: lib solvers
 
 solvers:
 	$(MAKE) --directory=src/solvers
-	#$(CC) -g  ${INCFLAGS}  $(LDFLAGS) -c -fPIC src/solvers/cpu/diag.c
 
 lib:
 	mkdir -p ofiles

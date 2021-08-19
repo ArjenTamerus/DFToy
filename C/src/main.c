@@ -75,7 +75,8 @@ void init_kinetic(double *H_kinetic, int num_plane_waves)
 			for(x = -(num_plane_waves/2); x < num_plane_waves/2+1; x++) {
 				idx_ = x < 0 ? num_plane_waves+x : x;
 
-				pos = idz_ * num_plane_waves * num_plane_waves + idy_ * num_plane_waves + idx_;
+				pos = idz_ * num_plane_waves * num_plane_waves + idy_ * num_plane_waves
+					+ idx_;
 				H_kinetic[pos] = 0.5*(x*x+y*y+z*z);
 			}
 
@@ -102,8 +103,9 @@ void init_local(double *H_local, int num_plane_waves)
 
 			for(x = -(num_plane_waves/2); x < num_plane_waves/2+1; x++) {
 				idx_ = x < 0 ? num_plane_waves+x : x;
-				pos = idz_ * num_plane_waves * num_plane_waves + idy_ * num_plane_waves + idx_;
 
+				pos = idz_ * num_plane_waves * num_plane_waves + idy_ * num_plane_waves
+					+ idx_;
 				H_local[pos] = -0.37/(0.005 + fabs(sqrt(x*x+y*y+z*z)/num_pw_3d - 0.5));
 			}
 		}
