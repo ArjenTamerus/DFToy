@@ -5,6 +5,7 @@
 #include <fftw3.h>
 #include <math.h>
 #include <lapacke.h>
+#include "parallel.h"
 #include "interfaces.h"
 
 fftw_complex *exact_solver(int num_plane_waves, int num_states,
@@ -15,7 +16,7 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 
 	int num_plane_waves_3D = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	printf("Calculating exact state.\n");
+	mpi_printf("Calculating exact state.\n");
 
 	full_H = calloc(num_plane_waves_3D * num_plane_waves_3D,
 			sizeof(fftw_complex));
@@ -50,7 +51,7 @@ void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic,
 	int i, j;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	printf("Constructing full Hamiltonian...\n");
+	mpi_printf("Constructing full Hamiltonian...\n");
 
 	tmp_state_1 = calloc(num_pw_3d, sizeof(fftw_complex));
 	tmp_state_2 = calloc(num_pw_3d, sizeof(fftw_complex));
@@ -96,8 +97,7 @@ void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
 		int num_plane_waves, int num_states)
 {
 	int diag_mode = get_diag_mode();
-
-	switch (diag_mode) {
+switch (diag_mode) {
 		case 1:
 			diag_zheevd(full_H, eigenvalues, num_plane_waves);
 			break;
@@ -108,13 +108,13 @@ void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
 			diag_pzheev(full_H, eigenvalues, num_plane_waves);
 			break;
 		case 4:
-			//diag_pzheevd(num_pw, H_kinetic, H_local, full_eigenvalue);
+			diag_pzheevd(full_H, eigenvalues, num_plane_waves);
 			break;
 		case 5:
-			//diag_pzheevr(num_pw, num_states, H_kinetic, H_local, full_eigenvalue);
+			diag_pzheevr(full_H, eigenvalues, num_plane_waves, num_states);
 			break;
 		case 8:
-			//diag_elpa(num_pw, H_kinetic, H_local, full_eigenvalue);
+			diag_elpa(full_H, eigenvalues, num_plane_waves);
 			break;
 		case 0:
 		default:
@@ -127,11 +127,11 @@ void report_eigenvalues(double *eigenvalues, int num_states)
 {
 	int i;
 
-	printf("==========================\n");
-	printf("== EIGENSTATES REPORT   ==\n");
-	printf("==========================\n");
+	mpi_printf("==========================\n");
+	mpi_printf("== EIGENSTATES REPORT   ==\n");
+	mpi_printf("==========================\n");
 	for(i = 0; i < num_states; i++) {
-		printf("== | %d | %f |\t==\n", i, eigenvalues[i]);
+		mpi_printf("== | %d | %f |\t==\n", i, eigenvalues[i]);
 	}
-	printf("==========================\n");
+	mpi_printf("==========================\n");
 }

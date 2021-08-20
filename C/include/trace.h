@@ -5,5 +5,3 @@ void TRACEFREE(void *ptr);
 void TRACEFFTW_FREE(void *ptr);
 void RESET_MEMSTATS();
 void report_mem_stats();
-
-int mpi_printf(int comm_rank, const char *format, ...);

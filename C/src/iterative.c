@@ -4,6 +4,7 @@
 #include <math.h>
 #include <fftw3.h>
 #include <lapacke.h>
+#include "parallel.h"
 #include "interfaces.h"
 
 void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
@@ -15,7 +16,7 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 	double *eigenvalues;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	printf("Starting iterative solver\n");
+	mpi_printf("Starting iterative solver\n");
 
 	init_seed();
 
@@ -57,7 +58,7 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 	int num_pw_2d = num_plane_waves * num_plane_waves;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	printf("Randomise state\n");
+	mpi_printf("Randomise state\n");
 
 	int x, y, z;
 	int idx_, idy_, pos;
@@ -111,12 +112,12 @@ void take_exact_state(int num_plane_waves, int num_states,
 	int np;
 
 	if (!exact_state) {
-		fprintf(stderr, "(EE) Exact state undefined, did you run the exact solver?"
+		mpi_error("Exact state undefined, did you run the exact solver?"
 				"\nExiting with failed state.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	printf("Copying exact eigenstates\n");
+	mpi_printf("Copying exact eigenstates\n");
 
 	for (np = 0; np < num_states * num_plane_waves; np++) {
 		trial_wvfn[np] = exact_state[np];
@@ -153,7 +154,7 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 	// compute cholesky factorisation of overlap matrix
 	err = LAPACKE_zpotrf(LAPACK_COL_MAJOR, 'U', num_states, overlap, num_states);
 	if (err) {
-		printf("zpotrf failed: %d\n", err);
+		mpi_error("zpotrf failed: %d\n", err);
 		exit(EXIT_FAILURE);
 	}
 
@@ -161,7 +162,7 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 	err = LAPACKE_ztrtri(LAPACK_COL_MAJOR, 'U', 'N', num_states, overlap,
 			num_states);
 	if (err) {
-		printf("ztrtri failed: %d\n", err);
+		mpi_error("ztrtri failed: %d\n", err);
 		exit(EXIT_FAILURE);
 	}
 
@@ -570,7 +571,7 @@ void line_search(int num_plane_waves ,int num_states,
 
 	if (d2E_dstep2 < 0.0) {
 		// Parabolic fit gives a maximum, so no good
-		printf("** Warning, parabolic stationary point is a maximum **\n");
+		mpi_printf("** Warning, parabolic stationary point is a maximum **\n");
 
 		if (tmp_energy < *energy) {
 			opt_step = step;
@@ -652,9 +653,8 @@ void line_search(int num_plane_waves ,int num_states,
 			}
 		}
 		else {
-			printf("Oh dear: %f\n",best_step);
-			printf("Problem with line search: best_step < 0\n");
-			exit(EXIT_FAILURE);
+			mpi_error("Problem with line search: best_step < 0 " "[%f]\n", best_step);
+			MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
 		}
 	}
 
@@ -712,16 +712,17 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 	previous_search_direction = calloc(num_pw_3d*num_states,
 			sizeof(fftw_complex));
 
-	printf("Starting iterative search @ tolerance of %1.0e\n", energy_tolerance);
+	mpi_printf("Starting iterative search @ tolerance of %1.0e\n",
+			energy_tolerance);
 
 	// Energy is the sum of the eigenvalues.
 	for (ns = 0; ns < num_states; ns++) {
 		total_energy += eigenvalues[ns];
 	}
 
-	printf("+-----------+----------------+-----------------+\n");
-	printf("|  Initial  | % #14.8g |                 |\n", total_energy);
-	printf("+-----------+----------------+-----------------+\n");
+	mpi_printf("+-----------+----------------+-----------------+\n");
+	mpi_printf("|  Initial  | % #14.8g |                 |\n", total_energy);
+	mpi_printf("+-----------+----------------+-----------------+\n");
 	max_iter = 4000;
 
 	/* ----------------------------------------------------
@@ -801,7 +802,7 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 			total_energy += eigenvalues[ns];
 		}
 
-		printf("|     %4d  | % #14.8g |  % #14.8g |\n",iter,total_energy,
+		mpi_printf("|     %4d  | % #14.8g |  % #14.8g |\n",iter,total_energy,
 				previous_energy-total_energy); 
 
 	}
@@ -811,8 +812,8 @@ int check_convergence(double previous_energy, double total_energy,
 		double tolerance)
 {
 		if(fabs(previous_energy-total_energy)<tolerance) {
-				printf("+-----------+----------------+-----------------+\n");
-				printf("Eigenvalues converged\n");
+				mpi_printf("+-----------+----------------+-----------------+\n");
+				mpi_printf("Eigenvalues converged\n");
 				return 1;
 		}
 		return 0;

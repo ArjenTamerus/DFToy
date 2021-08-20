@@ -1,11 +1,25 @@
 # Lines for GNU
+OMPI_CC=gcc
 CC=mpicc
-INCFLAGS=-I/usr/include/ -I../../../include
+CFLAGS=-g -O3
+CPPFLAGS=-I/usr/include/elpa -I../../../include
 #ELPA_CFLAGS=-I/usr/include/elpa-2020.11.001
 
-TARGET=../../..
+OBJDIR=../../../obj
+SRCDIR=.
 
-all:
-	$(CC) -g -O3 ${INCFLAGS} $(LDFLAGS) -c -o $(TARGET)/ofiles/diag.o diag.c
-#	$(CC) -g  ${INCFLAGS}  $(ELPA_CFLAGS) -c -fPIC -o $(TARGET)/elpa.o elpa.c
+SRC=$(wildcard $(SRCDIR)/*.c)
+OBJ=$(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
+
+all: $(OBJ)
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR):
+	mkdir -p $@
+
+#all:
+#	$(CC) -g -O3 ${INCFLAGS} -c -o $(TARGET)/ofiles/diag.o diag.c
+#	$(CC) -g -O3 ${INCFLAGS} -c -o $(TARGET)/ofiles/elpa.o elpa.c
 

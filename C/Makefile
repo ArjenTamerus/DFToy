@@ -2,42 +2,52 @@
 OMPI_CC=gcc
 CC=mpicc
 CFLAGS=-std=c99 -g -O3
-LAPACKLIBS=-lscalapack-openmpi -llapacke
-LIBS= $(LAPACKLIBS) -lfftw3 -lm
-INCFLAGS=-I/usr/include/ -I./include
-LDFLAGS=-L./ofiles
+LAPACK_LIBS=-lscalapack-openmpi -llapacke
+ELPA_LIBS=-lelpa
+LDLIBS= $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3 -lm
+CPP=cpp
 
-TARGET=.
+LAPACK_CPPFLAGS=
+ELPA_CPPFLAGS=-I/usr/include/elpa
+CPPFLAGS=-I/usr/include/ -I./include $(LAPACK_CPPFLAGS) $(ELPA_CPPFLAGS)
+
+LAPACK_LDFLAGS=
+ELPA_LDFLAGS=-L/usr/lib/x86_64-linux-gnu
+LDFLAGS=$(LAPACK_LFLAGS) $(ELPA_LFLAGS) $(LIBS)
+
+TARGET=eigensolver
 SOLVERS_CPU=TRUE
 export SOLVERS_CPU
 
 NTASKS?=1
 TOYCODE_DIAG?=PZHEEV
 
-.PHONY: solvers
+SRCDIR=src
+OBJDIR=obj
 
-all: eigensolver 
-	echo "libs:" $(LIBS)
+SRC=$(wildcard $(SRCDIR)/*.c)
+OBJ=$(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
-#eigensolver: lib solvers
-eigensolver: lib solvers
-	$(CC) -o eigensolver ofiles/*.o  $(LIBS) $(LDFLAGS)
+.PHONY: all clean
 
+all: $(TARGET)
+
+$(TARGET): solvers $(OBJ)
+	$(CC) -o $@ $(LDFLAGS) $(OBJDIR)/*.o $(LDLIBS)
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR):
+	mkdir -p $@
 
 solvers:
 	$(MAKE) --directory=src/solvers
 
-lib:
-	mkdir -p ofiles
-	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/main.o -c src/main.c
-	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/exact.o -c src/exact.c
-	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/iterative.o -c src/iterative.c
-	$(CC) $(CFLAGS) $(INCFLAGS) $(LDFLAGS) -o ofiles/trace.o -c src/trace.c
-
 clean:
-	rm -rf ofiles
+	rm -rf $(OBJDIR)
 	rm eigensolver
 
-run:
-	TOYCODE_DIAG=$(TOYCODE_DIAG) mpirun -np $(NTASKS) --oversubscribe ./eigensolver
+#run:
+#	TOYCODE_DIAG=$(TOYCODE_DIAG) mpirun -np $(NTASKS) --oversubscribe ./eigensolver
 

@@ -2,10 +2,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <complex.h>
-#include <mpi.h>
 #include <fftw3.h>
 #include <math.h>
 #include <lapacke.h>
+#include "parallel.h"
 #include "interfaces.h"
 
 int main(int argc, char **argv)
@@ -15,9 +15,8 @@ int main(int argc, char **argv)
 	int num_wave_vectors, num_plane_waves;
 	int num_pw_3d;
 	int num_states;
-	//int diagonalisation_method;
 
-	bool run_exact = true, run_iterative = true, keep_exact = false;
+	bool run_exact = true, run_iterative = false, keep_exact = false;
 
 	num_wave_vectors = 3;
 	num_plane_waves = 2*num_wave_vectors+1;
@@ -25,27 +24,27 @@ int main(int argc, char **argv)
 
 	num_states = 3;
 
-	printf("num_wave_vectors:\t%d\n", num_wave_vectors);
-	printf("num_plane_waves:\t%d\n", num_plane_waves);
-	printf("num_pw_3d:\t\t%d\n", num_pw_3d);
+	mpi_printf("num_wave_vectors:\t%d\n", num_wave_vectors);
+	mpi_printf("num_plane_waves:\t%d\n", num_plane_waves);
+	mpi_printf("num_pw_3d:\t\t%d\n", num_pw_3d);
 
 	// Right now, MPI is only used for scaLAPACK routines
-	MPI_Init(&argc, &argv);
+	init_parallel(argc, argv);
 
 	H_kinetic = calloc(num_pw_3d, sizeof(double));
 	H_local = calloc(num_pw_3d, sizeof(double));
 
-	init_kinetic(H_kinetic, num_plane_waves);
-	init_local(H_local, num_plane_waves);
+	if (par_root) {
+		init_kinetic(H_kinetic, num_plane_waves);
+		init_local(H_local, num_plane_waves);
+	}
 
 	if (run_exact) {
 		full_H = exact_solver(num_plane_waves, num_states, H_kinetic, H_local,
 				keep_exact); 
 	}
 
-	if (run_iterative) {
-		printf("Calculating state iteratively.\n");
-
+	if (run_iterative && par_root) {
 		iterative_solver(num_plane_waves, num_states, H_kinetic, H_local, full_H);
 	}
 
@@ -53,12 +52,14 @@ int main(int argc, char **argv)
 		free(full_H);
 	}
 
-	free(H_kinetic);
-	free(H_local);
+	if(par_root) {
+		free(H_kinetic);
+		free(H_local);
+	}
 
-	MPI_Finalize();
+	finalise_parallel();
 
-	printf("Done.\n");
+	mpi_printf("Done.\n");
 	
 	return 0;
 }
@@ -69,7 +70,7 @@ void init_kinetic(double *H_kinetic, int num_plane_waves)
 	int idx_, idy_, idz_;
 	int pos;
 
-	printf("Initialising kinetic Hamiltonian...\n");
+	mpi_printf("Initialising kinetic Hamiltonian...\n");
 
 	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
 		idz_ = z < 0 ? num_plane_waves+z : z;
@@ -98,7 +99,7 @@ void init_local(double *H_local, int num_plane_waves)
 
 	int num_pw_3d = num_plane_waves*num_plane_waves*num_plane_waves;
 
-	printf("Initialising local Hamiltonian...\n");
+	mpi_printf("Initialising local Hamiltonian...\n");
 
 	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
 		idz_ = z < 0 ? num_plane_waves+z : z;

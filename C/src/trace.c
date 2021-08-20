@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#include <mpi.h>
+#include <parallel.h>
 #include <fftw3.h>
 
 #include "trace.h"
@@ -51,22 +51,6 @@ void report_mem_stats()
 {
 	int rank;
 
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-	mpi_printf(rank, "Memory: %d\n", max_mem_use/(1024*1024));
-}
-
-int mpi_printf(int comm_rank, const char *format, ...)
-{
-	int status = 0;
-	va_list myargs;
-
-	if(0 == comm_rank) {
-		va_start(myargs, format);
-		status = vprintf(format, myargs);
-		va_end(myargs);
-	}
-
-	return status;
+	mpi_printf("Memory: %d\n", max_mem_use/(1024*1024));
 }
 
