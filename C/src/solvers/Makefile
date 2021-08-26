@@ -1,13 +1,21 @@
-.PHONY: cpu	cuda oneapi
+# Lines for GNU
+OMPI_CC=gcc
+CC=mpicc
+CFLAGS=-std=c99 -g -O3 -Wall -Wpedantic
+CPPFLAGS=-isystem/usr/include/elpa -I../../include
+#ELPA_CFLAGS=-I/usr/include/elpa-2020.11.001
 
-all: cpu cuda oneapi
+OBJDIR=../../obj
+SRCDIR=.
 
-cpu:
-ifeq ($(SOLVERS_CPU), TRUE)
-	$(MAKE) --directory cpu
-endif
+SRC=$(wildcard $(SRCDIR)/*.c)
+OBJ=$(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
-cuda:
+all: $(OBJ)
 
-oneapi:
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR):
+	mkdir -p $@
 

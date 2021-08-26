@@ -4,7 +4,6 @@
 #include <complex.h>
 #include <fftw3.h>
 #include <math.h>
-#include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
 
@@ -15,21 +14,22 @@ int main(int argc, char **argv)
 	int num_wave_vectors, num_plane_waves;
 	int num_pw_3d;
 	int num_states;
+	struct toycode_params params;
 
-	bool run_exact = true, run_iterative = false, keep_exact = false;
+	// Right now, MPI is only used for scaLAPACK routines
+	init_parallel(argc, argv);
 
-	num_wave_vectors = 3;
+	get_configuration_params(argc, argv, &params);
+
+	num_wave_vectors = params.num_wave_vectors;
 	num_plane_waves = 2*num_wave_vectors+1;
 	num_pw_3d = num_plane_waves*num_plane_waves*num_plane_waves;
 
-	num_states = 3;
+	num_states = params.num_states;
 
 	mpi_printf("num_wave_vectors:\t%d\n", num_wave_vectors);
 	mpi_printf("num_plane_waves:\t%d\n", num_plane_waves);
 	mpi_printf("num_pw_3d:\t\t%d\n", num_pw_3d);
-
-	// Right now, MPI is only used for scaLAPACK routines
-	init_parallel(argc, argv);
 
 	H_kinetic = calloc(num_pw_3d, sizeof(double));
 	H_local = calloc(num_pw_3d, sizeof(double));
@@ -39,12 +39,12 @@ int main(int argc, char **argv)
 		init_local(H_local, num_plane_waves);
 	}
 
-	if (run_exact) {
+	if (params.run_exact_solver) {
 		full_H = exact_solver(num_plane_waves, num_states, H_kinetic, H_local,
-				keep_exact); 
+				params.exact_solver, params.keep_exact_solution); 
 	}
 
-	if (run_iterative && par_root) {
+	if (params.run_iterative_solver && par_root) {
 		iterative_solver(num_plane_waves, num_states, H_kinetic, H_local, full_H);
 	}
 

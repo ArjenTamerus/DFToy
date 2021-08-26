@@ -1,3 +1,6 @@
+/*
+ *
+ */
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -9,7 +12,8 @@
 #include "interfaces.h"
 
 fftw_complex *exact_solver(int num_plane_waves, int num_states,
-		double *H_kinetic, double *H_local, bool save_exact_state)
+		double *H_kinetic, double *H_local, const char *exact_diagonaliser,
+		bool save_exact_state)
 {
 	fftw_complex *full_H;
 	double *eigenvalues;
@@ -25,7 +29,7 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 	construct_hamiltonian(full_H, H_kinetic, H_local, num_plane_waves);
 
 	diagonalise_exact_solution(full_H, eigenvalues, num_plane_waves_3D,
-			num_states);
+			num_states, exact_diagonaliser);
 
 	report_eigenvalues(eigenvalues, num_states);
 
@@ -94,10 +98,14 @@ void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic,
 }
 
 void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
-		int num_plane_waves, int num_states)
+		int num_plane_waves, int num_states, const char *exact_diagonaliser)
 {
-	int diag_mode = get_diag_mode();
-switch (diag_mode) {
+	int diag_mode = get_diag_mode(exact_diagonaliser);
+	
+	switch (diag_mode) {
+		case 0:
+			diag_zheev(full_H, eigenvalues, num_plane_waves);
+			break;
 		case 1:
 			diag_zheevd(full_H, eigenvalues, num_plane_waves);
 			break;
@@ -113,10 +121,9 @@ switch (diag_mode) {
 		case 5:
 			diag_pzheevr(full_H, eigenvalues, num_plane_waves, num_states);
 			break;
-		case 8:
+		case 6:
 			diag_elpa(full_H, eigenvalues, num_plane_waves);
 			break;
-		case 0:
 		default:
 			diag_zheev(full_H, eigenvalues, num_plane_waves);
 			break;

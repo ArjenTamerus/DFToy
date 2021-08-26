@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <complex.h>
@@ -46,7 +47,7 @@ int mpi_printf(const char *format, ...)
 	int status = 0;
 	va_list myargs;
 
-	if(par_root) {
+	if (par_root) {
 		va_start(myargs, format);
 		status = vprintf(format, myargs);
 		va_end(myargs);
@@ -69,6 +70,20 @@ int mpi_error(const char *format, ...)
 	va_end(myargs);
 
 	return status;
+}
+
+void mpi_fail(const char *format, ...)
+{
+	int status = 0;
+	va_list myargs;
+
+	if (par_root) {
+		va_start(myargs, format);
+		status = mpi_error(format, myargs);
+		va_end(myargs);
+	}
+
+	MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
 }
 
 void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9], 

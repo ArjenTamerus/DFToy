@@ -1,7 +1,7 @@
 # Lines for GNU
 OMPI_CC=gcc
 CC=mpicc
-CFLAGS=-std=c99 -g -O3
+CFLAGS=-std=c99 -g -O3 -Wall -Wpedantic -D_POSIX_C_SOURCE=200809L
 LAPACK_LIBS=-lscalapack-openmpi -llapacke
 ELPA_LIBS=-lelpa
 LDLIBS= $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3 -lm
@@ -16,19 +16,19 @@ ELPA_LDFLAGS=-L/usr/lib/x86_64-linux-gnu
 LDFLAGS=$(LAPACK_LFLAGS) $(ELPA_LFLAGS) $(LIBS)
 
 TARGET=eigensolver
+
+SRCDIR=src
+OBJDIR=obj
+SRC=$(wildcard $(SRCDIR)/*.c)
+OBJ=$(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
+
 SOLVERS_CPU=TRUE
 export SOLVERS_CPU
 
 NTASKS?=1
-TOYCODE_DIAG?=PZHEEV
+TOYCODE_DIAG?=ZHEEV
 
-SRCDIR=src
-OBJDIR=obj
-
-SRC=$(wildcard $(SRCDIR)/*.c)
-OBJ=$(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
-
-.PHONY: all clean
+.PHONY: all clean run
 
 all: $(TARGET)
 
@@ -48,6 +48,6 @@ clean:
 	rm -rf $(OBJDIR)
 	rm eigensolver
 
-#run:
-#	TOYCODE_DIAG=$(TOYCODE_DIAG) mpirun -np $(NTASKS) --oversubscribe ./eigensolver
+run:
+	TOYCODE_DIAG=$(TOYCODE_DIAG) mpirun -np $(NTASKS) --oversubscribe ./eigensolver
 

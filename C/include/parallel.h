@@ -16,6 +16,7 @@ void finalise_parallel();
 
 int mpi_printf(const char *format, ...);
 int mpi_error(const char *format, ...);
+void mpi_fail(const char *format, ...);
 
 void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9], 
 		fftw_complex *matrix, fftw_complex **A, fftw_complex **Z);
