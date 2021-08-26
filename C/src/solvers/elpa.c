@@ -3,8 +3,9 @@
 #include <complex.h>
 #include <fftw3.h>
 #include <elpa/elpa.h>
-#include "parallel.h"
 #include "interfaces.h"
+#include "parallel.h"
+#include "diag.h"
 #include "trace.h"
 
 int get_elpa_1_2_stage()
@@ -48,21 +49,13 @@ int get_elpa_2stage_solver()
 	return ELPA_2STAGE_COMPLEX_AVX2_BLOCK2;
 }
 
-int diag_elpa(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
+void diag_elpa(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
 {
-	fftw_complex *work;
-	double *rwork;
-	int *iwork;
-	int lwork, lrwork, liwork;
-	int i;
 	int status;
-	char jobz;
-	char uplo;
 
 	elpa_t elpa_handle;
 
 	int zero = 0;
-	int one = 1;
 
 	mpi_printf("Performing exact diagonalisation with ELPA...\n");
 

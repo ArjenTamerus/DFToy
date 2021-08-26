@@ -6,6 +6,7 @@
 #include <fftw3.h>
 #include <lapacke.h>
 #include "parallel.h"
+#include "diag.h"
 #include "interfaces.h"
 #include "trace.h"
 
@@ -18,7 +19,6 @@ void diag_pzheev(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
 	fftw_complex *work;
 	double *rwork;
 	int lwork, lrwork;
-	int i,j;
 	int status;
 	char jobz;
 	char uplo;
@@ -86,7 +86,6 @@ void diag_pzheevd(fftw_complex *full_H, double *eigenvalues,
 	double *rwork;
 	int *iwork;
 	int lwork, lrwork, liwork;
-	int i,j;
 	int status;
 	char jobz;
 	char uplo;
@@ -140,7 +139,6 @@ void diag_pzheevr(fftw_complex *full_H, double *eigenvalues,
 	double *rwork;
 	int *iwork;
 	int lwork, lrwork, liwork;
-	int i,j;
 	int status;
 	char jobz;
 	char uplo;
@@ -181,6 +179,7 @@ void diag_pzheevr(fftw_complex *full_H, double *eigenvalues,
 
 	iwork = TRACECALLOC(liwork,sizeof(int));
 
+	pzheevd_(&jobz, &uplo, &num_plane_waves, A, &one, &one, desc, eigenvalues, Z, &one, &one, desc, work, &lwork, rwork, &lrwork, iwork, &liwork, &status);
 	pzheevr_(&jobz, &range, &uplo, &num_plane_waves, A, &one, &one, desc, 
 			&VL, &VU, &IL, &IU, &eigenvalues_found, &eigenvectors_computed,
 			eigenvalues, Z, &one, &one, desc, work, &lwork, rwork, &lrwork, iwork, &liwork, &status);

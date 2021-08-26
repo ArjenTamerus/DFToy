@@ -6,6 +6,7 @@
 #include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
+#include <diag.h>
 #include "trace.h"
 
 void diag_abort_on_error(int errcode, const char *diag_type)

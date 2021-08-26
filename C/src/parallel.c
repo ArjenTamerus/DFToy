@@ -5,6 +5,7 @@
 #include <complex.h>
 #include <fftw3.h>
 #include "parallel.h"
+#include "diag.h"
 #include "trace.h"
 
 int world_size, world_rank;
@@ -74,12 +75,11 @@ int mpi_error(const char *format, ...)
 
 void mpi_fail(const char *format, ...)
 {
-	int status = 0;
 	va_list myargs;
 
 	if (par_root) {
 		va_start(myargs, format);
-		status = mpi_error(format, myargs);
+		mpi_error(format, myargs);
 		va_end(myargs);
 	}
 

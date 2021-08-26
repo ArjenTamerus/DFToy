@@ -49,8 +49,6 @@ void RESET_MEMSTATS()
 
 void report_mem_stats()
 {
-	int rank;
-
 	mpi_printf("Memory: %d\n", max_mem_use/(1024*1024));
 }
 

@@ -54,14 +54,14 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 {
 	double rnd1, rnd2;
-	int ns, np;
+	int ns;
 	int num_pw_2d = num_plane_waves * num_plane_waves;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
 	mpi_printf("Randomise state\n");
 
 	int x, y, z;
-	int idx_, idy_, pos;
+	int pos;
 	int offset, offset_ns;
 	fftw_complex rand_val;
 
@@ -195,9 +195,9 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 
 
 	for (ns2=0;ns2<num_states;ns2++) {
-		int state_offset = ns2*num_plane_waves;
+		state_offset = ns2*num_plane_waves;
 		for (ns1=0;ns1<num_states;ns1++) {
-			int ref_state_offset = ns1*num_plane_waves;
+			ref_state_offset = ns1*num_plane_waves;
 
 			overlap = (0+0*I);
 
@@ -303,8 +303,8 @@ void diagonalise(int num_plane_waves,int num_states, fftw_complex *state,
 		 |-------------------------------------------------| */
 	int ns1, ns2;
 	int offset_ns1, offset_ns2;
-	int optimal_size;
-	int i, err;
+	int i;
+	int err;
 
 	// Compute the subspace H matrix and store in rotation array
 	for (ns2=0;ns2<num_states;ns2++) {
@@ -326,6 +326,10 @@ void diagonalise(int num_plane_waves,int num_states, fftw_complex *state,
 	err = LAPACKE_zheev(LAPACK_ROW_MAJOR, 'V', 'U', num_states, rotation,
 			num_states, eigenvalues);
 
+	if(err) {
+		mpi_fail("LAPACK error in diagonalise().\n");
+	}
+
 	// Finally apply the diagonalising rotation to state
 	// (and also to H_state, to keep it consistent with state)
 	transform(num_plane_waves,num_states,state,rotation);
@@ -339,7 +343,6 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state,
 	fftw_complex *new_state;
 	int ns1, ns2, pw;
 	int offset_ns2, offset_ns1;
-	int err;
 
 	new_state = calloc(num_plane_waves * num_states, sizeof(fftw_complex));
 
@@ -692,7 +695,7 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 		double *H_local, fftw_complex *trial_wvfn, fftw_complex *gradient,
 		fftw_complex *rotation, double *eigenvalues)
 {
-	int ns, pw;
+	int ns;
 	int iter, max_iter;
 	fftw_complex *search_direction,
 							 *previous_search_direction;

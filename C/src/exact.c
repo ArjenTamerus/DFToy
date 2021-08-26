@@ -10,6 +10,7 @@
 #include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
+#include "diag.h"
 
 fftw_complex *exact_solver(int num_plane_waves, int num_states,
 		double *H_kinetic, double *H_local, const char *exact_diagonaliser,
