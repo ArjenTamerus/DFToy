@@ -26,12 +26,18 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 
 	eigenvalues = calloc(num_states, sizeof(double));
 
-	// For verification - copying in the exact state should cause the iterative
-	// solver to _immediately_ give the right answer. If it starts iterating or
-	// the eigenstates don't match, there's a bug in the solver.
-	//take_exact_state(num_pw_3d, num_states, trial_wvfn, exact_state);
-	// Actual iterative method: start with random guess for wavefunction
-	randomise_state(num_plane_waves, num_states, trial_wvfn);
+	if (exact_state != NULL) {
+		// For verification - copying in the exact state should cause the iterative
+		// solver to _immediately_ give the right answer. If it starts iterating or
+		// the eigenstates don't match, there's a bug in the solver.
+		mpi_printf("Using the exact solution as input for the iterative solver.\n"
+				"This should give the correct answer immediately. [Debug feature]\n");
+		take_exact_state(num_pw_3d, num_states, trial_wvfn, exact_state);
+	}
+	else {
+		// Actual iterative method: start with random guess for wavefunction
+		randomise_state(num_plane_waves, num_states, trial_wvfn);
+	}
 
 	orthonormalise(num_pw_3d, num_states, trial_wvfn);
 
