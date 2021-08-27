@@ -3,34 +3,35 @@
 
 // Prototypes for netlib routines
 
-int numroc_(int *a, int *b, int *c, int *d, int *e);
-int descinit_(int *a, int *b, int *c, int *d, int *e, int *f, int *g, int *h,
-		int *i, int *j);
+int numroc_(int *n, int *nb, int *iproc, int *isrcproc, int *nprocs);
+int descinit_(int *desc, int *m, int *n, int *mb, int *nb, int *isrc,
+		int *icsrc, int *ictxt, int *lld, int *info);
 
 // scaLAPACK
 
-int Cblacs_pinfo(int *blacs_rank, int *blacs_size);
-int Cblacs_get(int a, int b, int *blacs_ctxt);
-int Cblacs_gridinit(int *blacs_ctxt, char *a, int b, int c);
-int Cblacs_gridinfo(int blacs_ctxt, int *nprow, int *npcol, int *myprow,
+int Cblacs_pinfo(int *mypnum, int *nprocs);
+int Cblacs_get(int icontxt, int what, int *val);
+int Cblacs_gridinit(int *ictxt, char *order, int nprow, int npcol);
+int Cblacs_gridinfo(int ictxt, int *nprow, int *npcol, int *myprow,
 		int *mypcol);
 
-void pzgemr2d_(int *a, int *b, fftw_complex *d, int *e, int *f, int *g,
-		fftw_complex *h, int *i, int *j, int *k, int *blacs_ctxt);
-void pzheev_(char *a, char *b, int *c, fftw_complex *A, int *e, int *f, int *g,
-		double *h, fftw_complex *Z, int *i, int *j, int *k, fftw_complex *work,
-		int *lwork, double *rwork, int *lrwork, int *status);
+void pzgemr2d_(int *m, int *n, fftw_complex *A, int *ia, int *ja, int *desca,
+		fftw_complex *B, int *ib, int *jb, int *descb, int *ictxt);
 
-void pzheevd_(char *a, char *b, int *c, fftw_complex *A, int *e, int *f, int *g,
-		double *h, fftw_complex *Z, int *i, int *j, int *k, fftw_complex *work,
-		int *lwork, double *rwork, int *lrwork, int *iwork, int *liwork,
-		int *status);
+void pzheev_(char *jobz, char *uplo, int *n, fftw_complex *A, int *ia, int *ja,
+		int *desca, double *W, fftw_complex *Z, int *iz, int *jz, int *descz,
+		fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *info);
 
-void pzheevr_(char *jobz, char *range, char *uplo, int *c, fftw_complex *A,
-		int *e, int *f, int *desc, int *VL, int *VU, int *IL, int *IU, int *g,
-		int *g2, double *h, fftw_complex *Z, int *i, int *j, int *k,
+void pzheevd_(char *jobz, char *uplo, int *n, fftw_complex *A, int *ia, int *ja,
+		int *desca, double *W, fftw_complex *Z, int *iz, int *jz, int *descz,
 		fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *iwork,
-		int *liwork, int *status);
+		int *liwork, int *info);
+
+void pzheevr_(char *jobz, char *range, char *uplo, int *n, fftw_complex *A,
+		int *ia, int *ia, int *desca, int *vl, int *vu, int *il, int *iu, int *m,
+		int *nz, double *W, fftw_complex *Z, int *iz, int *jz, int *descz,
+		fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *iwork,
+		int *liwork, int *info);
 
 // solvers
 
