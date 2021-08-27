@@ -5,7 +5,6 @@
 #include <complex.h>
 #include <fftw3.h>
 #include "parallel.h"
-#include "diag.h"
 #include "trace.h"
 
 int world_size, world_rank;

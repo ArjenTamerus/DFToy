@@ -4,9 +4,6 @@
 #include <complex.h>
 #include <fftw3.h>
 
-void pzgemr2d_(int *m, int *n, fftw_complex *A, int *ia, int *ja, int *desca,
-		fftw_complex *B, int *ib, int *jb, int *descb, int *ictxt);
-
 void pzheev_(char *jobz, char *uplo, int *n, fftw_complex *A, int *ia, int *ja,
 		int *desca, double *W, fftw_complex *Z, int *iz, int *jz, int *descz,
 		fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *info);

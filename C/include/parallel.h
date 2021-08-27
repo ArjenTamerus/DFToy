@@ -24,6 +24,9 @@ int Cblacs_gridinit(int *ictxt, char *order, int nprow, int npcol);
 int Cblacs_gridinfo(int ictxt, int *nprow, int *npcol, int *myprow,
 		int *mypcol);
 
+void pzgemr2d_(int *m, int *n, fftw_complex *A, int *ia, int *ja, int *desca,
+		fftw_complex *B, int *ib, int *jb, int *descb, int *ictxt);
+
 void init_parallel(int argc, char **argv);
 void finalise_parallel();
 
