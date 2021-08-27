@@ -15,7 +15,7 @@ LAPACK_LDFLAGS=
 ELPA_LDFLAGS=-L/usr/lib/x86_64-linux-gnu
 LDFLAGS=$(LAPACK_LFLAGS) $(ELPA_LFLAGS) $(LIBS)
 
-TARGET=eigensolver
+TARGET=dftoy
 
 SRCDIR=src
 OBJDIR=obj
@@ -26,7 +26,7 @@ SOLVERS_CPU=TRUE
 export SOLVERS_CPU
 
 NTASKS?=1
-TOYCODE_DIAG?=ZHEEV
+TOYCODE_DIAG?=ZHEEVD
 
 .PHONY: all clean run
 
@@ -46,8 +46,8 @@ solvers:
 
 clean:
 	rm -rf $(OBJDIR)
-	rm eigensolver
+	rm $(TARGET)
 
 run:
-	TOYCODE_DIAG=$(TOYCODE_DIAG) mpirun -np $(NTASKS) --oversubscribe ./eigensolver
+	 mpirun -np $(NTASKS) --oversubscribe ./$(TARGET) -x $(TOYCODE_DIAG)
 
