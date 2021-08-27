@@ -1,3 +1,10 @@
+/*
+ * Trace.h
+ *
+ * Memory tracking and timing routines. Pretty much a stub right now.
+ *
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>

@@ -1,3 +1,9 @@
+/*
+ * Iterative.c
+ *
+ * Find eigenstates using an iterative conjugate gradient approach.
+ *
+ */
 #include <stdlib.h>
 #include <stdio.h>
 #include <complex.h>
@@ -26,6 +32,8 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 
 	eigenvalues = calloc(num_states, sizeof(double));
 
+	// Initialisation and initial step
+
 	if (exact_state != NULL) {
 		// For verification - copying in the exact state should cause the iterative
 		// solver to _immediately_ give the right answer. If it starts iterating or
@@ -47,6 +55,7 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 	calculate_eigenvalues(num_pw_3d, num_states, trial_wvfn, gradient,
 			eigenvalues);
 
+	// Iterate to find true eigenstates
 	iterative_search(num_plane_waves, num_states, H_kinetic, H_local, trial_wvfn,
 			gradient, rotation, eigenvalues);
 
@@ -57,6 +66,7 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 
 }
 
+// Guess a wavefunction: random but symmetric values (reciprocal space)
 void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 {
 	double rnd1, rnd2;
@@ -112,6 +122,7 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 
 }
 
+// Debug function: copy exact solution into trial wavefunction
 void take_exact_state(int num_plane_waves, int num_states,
 		fftw_complex *trial_wvfn, fftw_complex *exact_state)
 {
@@ -138,7 +149,6 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 	int ns1, ns2, pw;
 	int offset_ns2, offset_ns1;
 	int err;
-
 
 	overlap = calloc(num_states*num_states, sizeof(fftw_complex));
 
@@ -230,15 +240,11 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 
 }
 
+// Apply a kinetic energy-based preconditioner to the search direction.
+// This should improve the conditioning of the eigenvalue search.
 void precondition(int num_plane_waves, int num_states,
 		fftw_complex *search_direction, fftw_complex *trial_wvfn, double *H_kinetic)
 {
-	/* |-------------------------------------------------|
-		 | This subroutine takes a search direction and    |
-		 | applies a simple kinetic energy-based           |
-		 | preconditioner to improve the conditioning of   |
-		 | the eigenvalue search.                          |
-		 |-------------------------------------------------| */
 	int np,ns;
 	int offset;
 	double kinetic_eigenvalue;
@@ -430,7 +436,7 @@ void init_seed()
 	int seed;
 
 	if(!initialised) {
-		// TODO use clock
+		// TODO enable _actually random_ seed?
 		seed = 13377331;
 		srand(seed);
 		initialised = 1;
@@ -817,13 +823,13 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 	}
 }
 
-int check_convergence(double previous_energy, double total_energy,
+bool check_convergence(double previous_energy, double total_energy,
 		double tolerance)
 {
 		if(fabs(previous_energy-total_energy)<tolerance) {
 				mpi_printf("+-----------+----------------+-----------------+\n");
 				mpi_printf("Eigenvalues converged\n");
-				return 1;
+				return true;
 		}
-		return 0;
+		return false;
 }

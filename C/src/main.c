@@ -1,3 +1,10 @@
+/* 
+ * Main.c
+ *
+ * Toy 'DFT-like' solver code.
+ *
+ */
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -16,7 +23,7 @@ int main(int argc, char **argv)
 	int num_states;
 	struct toycode_params params;
 
-	// Right now, MPI is only used for scaLAPACK routines
+	// Right now, the only parallel bits are the ScaLAPACK/ELPA solvers
 	init_parallel(argc, argv);
 
 	get_configuration_params(argc, argv, &params);
@@ -64,6 +71,7 @@ int main(int argc, char **argv)
 	return 0;
 }
 
+// Initialise Kinetic Energy part of the Hamiltonian (reciprocal space)
 void init_kinetic(double *H_kinetic, int num_plane_waves)
 {
 	int x, y, z;
@@ -91,6 +99,7 @@ void init_kinetic(double *H_kinetic, int num_plane_waves)
 	}
 }
 
+// Initialise Local Energy part of the Hamiltonian (real space)
 void init_local(double *H_local, int num_plane_waves)
 {
 	int x, y, z;

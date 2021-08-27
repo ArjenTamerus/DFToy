@@ -1,6 +1,10 @@
 /*
+ * Exact.c
+ *
+ * Find eigenstates using exact diagonaliser.
  *
  */
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>

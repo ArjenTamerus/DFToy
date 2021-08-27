@@ -1,3 +1,10 @@
+/*
+ * Parallel.c
+ *
+ * Support routines facilitating parallel compute/communication.
+ *
+ */
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -12,6 +19,7 @@ int blacs_ctxt, blacs_ctxt_root;
 int nprow, npcol, myprow, mypcol;
 bool par_root = false;
 
+// Initialise MPI and BLACS
 void init_parallel(int argc, char **argv)
 {
 	MPI_Init(&argc, &argv);
@@ -42,6 +50,7 @@ void finalise_parallel()
 	MPI_Finalize();
 }
 
+// Root prints message to stdout
 int mpi_printf(const char *format, ...)
 {
 	int status = 0;
@@ -56,6 +65,7 @@ int mpi_printf(const char *format, ...)
 	return status;
 }
 
+// Root prints message to stderr
 int mpi_error(const char *format, ...)
 {
 	int status = 0;
@@ -72,6 +82,8 @@ int mpi_error(const char *format, ...)
 	return status;
 }
 
+
+// Root prints to stderr, everyone aborts - fatal error.
 void mpi_fail(const char *format, ...)
 {
 	va_list myargs;
@@ -100,6 +112,7 @@ void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9],
 	int zero = 0;
 	int one = 1;
 
+	// BLACS set-up
 	NB = num_plane_waves/nprow;
 	MB = NB;//num_plane_waves/nprow;
 	NLOC_A = numroc_(&num_plane_waves, &NB, &mypcol, &zero, &npcol);
@@ -109,6 +122,7 @@ void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9],
 	LDA = LDA < 1 ? 1 : LDA;
 
 	descinit_(desc, &num_plane_waves, &num_plane_waves, &MB, &NB, &zero, &zero, &blacs_ctxt, &LDA, &status);
+
 	if (par_root) {
 		descinit_(desc_root, &num_plane_waves, &num_plane_waves, &num_plane_waves, &num_plane_waves, &zero, &zero, &blacs_ctxt_root, &num_plane_waves, &status);
 	} else {

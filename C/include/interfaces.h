@@ -58,7 +58,7 @@ void calculate_eigenvalues(int num_plane_waves, int num_states,
 void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 		double *H_local, fftw_complex *trial_wvfn, fftw_complex *gradient,
 		fftw_complex *rotation, double *eigenvalues);
-int check_convergence(double previous_energy, double total_energy,
+bool check_convergence(double previous_energy, double total_energy,
 		double tolerance);
 
 void line_search(int num_pw ,int num_states, fftw_complex *approx_state,

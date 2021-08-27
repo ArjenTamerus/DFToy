@@ -1,3 +1,10 @@
+/*
+ * Lapack.c
+ *
+ * Implements LAPACK (ZHEEV*) based diagonalisation.
+ *
+ */
+
 #include <stdlib.h>
 #include <complex.h>
 #include <math.h>
