@@ -28,7 +28,7 @@ void pzheevd_(char *jobz, char *uplo, int *n, fftw_complex *A, int *ia, int *ja,
 		int *liwork, int *info);
 
 void pzheevr_(char *jobz, char *range, char *uplo, int *n, fftw_complex *A,
-		int *ia, int *ia, int *desca, int *vl, int *vu, int *il, int *iu, int *m,
+		int *ia, int *ja, int *desca, int *vl, int *vu, int *il, int *iu, int *m,
 		int *nz, double *W, fftw_complex *Z, int *iz, int *jz, int *descz,
 		fftw_complex *work, int *lwork, double *rwork, int *lrwork, int *iwork,
 		int *liwork, int *info);
