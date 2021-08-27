@@ -94,7 +94,8 @@ void mpi_fail(const char *format, ...)
 		va_end(myargs);
 	}
 
-	MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+	finalise_parallel();
+	exit(EXIT_FAILURE);
 }
 
 void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9], 

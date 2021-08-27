@@ -20,6 +20,8 @@ struct option tc_params[] = {
 	{"debug_iterative", no_argument, 0, 'd'},
 	{"exact", no_argument, 0, 'e'},
 	{"iterative", no_argument, 0, 'i'},
+	{"usage", no_argument, 0, 'u'},
+	{"version", no_argument, 0, 'V'},
 	{0, 0, 0, 0}
 };
 
@@ -62,7 +64,7 @@ void get_configuration_params(int argc, char **argv,
 
 	// Use getopt to parse command line options
 	while (1) {
-		opt_id = getopt_long_only(argc, argv, "deis:w:x:", tc_params, NULL);
+		opt_id = getopt_long_only(argc, argv, "deis:uVw:x:", tc_params, NULL);
 
 		if(opt_id == -1) {
 			break;
@@ -82,6 +84,14 @@ void get_configuration_params(int argc, char **argv,
 
 			case 's':
 				set_int_param(&(params->num_states), optarg, "--states [-s]");
+				break;
+
+			case 'V':
+				version();
+				break;
+
+			case 'u':
+				usage();
 				break;
 
 			case 'w':
@@ -173,3 +183,50 @@ int get_diag_mode(const char *diag_param)
 	return mode;
 }
 
+// Print version information
+void version()
+{
+	mpi_printf("DFToy version %s.\n", get_version_string());
+
+	finalise_parallel();
+	exit(EXIT_SUCCESS);
+}
+
+// Print usage information
+void usage()
+{
+	mpi_printf(
+			"DFToy version %s.\n\n"
+			"Usage:\n"
+			"mpirun -np <nprocs> dftoy <params>\n\n"
+			"Default settings are equivalent to <dftoy -e -i -w 3 -s 1>\n\n"
+			"Optional parameters:\n\n"
+			" -d, --debug_iterative\n"
+			"            Debug iterative solver (forces -e -i).\n\n"
+			" -e, --exact\n"
+			"            Enable exact solver.\n\n"
+			" -i, --iterative\n"
+			"            Enable exact solver.\n\n"
+			" -s <n>, --states=<n>\n"
+			"            Calculate <n> eigenstates.\n\n"
+			" -u, --usage\n"
+			"            Enable exact solver.\n\n"
+			" -V, --version\n"
+			"            Print version information.\n\n"
+			" -w <n>, --wavevectors=<n>\n"
+			"            Set wavevector resolution to <n>.\n\n"
+			" -x <n>, --exact_solver=<solver>\n"
+			"            Calculate exact solution using <solver>.\n\n",
+			get_version_string()
+		);
+
+	finalise_parallel();
+	exit(EXIT_SUCCESS);
+}
+
+// Return version string. TODO: actually keep track of version...
+// Major/minor? Date? Store in header/struct/etc else?
+const char *get_version_string()
+{
+	return "0.1-unreleased";
+}

@@ -70,11 +70,15 @@ void init_seed();
 double random_double();
 
 
+// parameter parsing
 void set_default_configuration_params(struct toycode_params *params);
 void get_configuration_params(int argc, char **argv,
 		struct toycode_params *params);
 void set_int_param(long int *param, const char *param_value,
 		const char *param_name);
 int get_diag_mode(const char *diag_param);
+void version();
+void usage();
+const char *get_version_string();
 
 #endif
