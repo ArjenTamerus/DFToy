@@ -1,19 +1,8 @@
+#ifndef TC_DIAG_H
+#define TC_DIAG_H
+
 #include <complex.h>
 #include <fftw3.h>
-
-// Prototypes for netlib routines
-
-int numroc_(int *n, int *nb, int *iproc, int *isrcproc, int *nprocs);
-int descinit_(int *desc, int *m, int *n, int *mb, int *nb, int *isrc,
-		int *icsrc, int *ictxt, int *lld, int *info);
-
-// scaLAPACK
-
-int Cblacs_pinfo(int *mypnum, int *nprocs);
-int Cblacs_get(int icontxt, int what, int *val);
-int Cblacs_gridinit(int *ictxt, char *order, int nprow, int npcol);
-int Cblacs_gridinfo(int ictxt, int *nprow, int *npcol, int *myprow,
-		int *mypcol);
 
 void pzgemr2d_(int *m, int *n, fftw_complex *A, int *ia, int *ja, int *desca,
 		fftw_complex *B, int *ib, int *jb, int *descb, int *ictxt);
@@ -48,3 +37,4 @@ void diag_pzheevr(fftw_complex *full_H, double *eigenvalues,
 
 void diag_elpa(fftw_complex *full_H, double *eigenvalues, int num_plane_waves);
 
+#endif

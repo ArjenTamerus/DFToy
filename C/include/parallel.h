@@ -1,5 +1,5 @@
-#ifndef TOYCODE_PARALLEL_H
-#define TOYCODE_PARALLEL_H
+#ifndef TC_PARALLEL_H
+#define TC_PARALLEL_H
 
 #include <stdbool.h>
 #include <complex.h>
@@ -10,6 +10,19 @@ extern int world_size, world_rank;
 extern int blacs_ctxt, blacs_ctxt_root;
 extern int nprow, npcol, myprow, mypcol;
 extern bool par_root;
+
+// Prototypes for netlib routines
+
+int numroc_(int *n, int *nb, int *iproc, int *isrcproc, int *nprocs);
+int descinit_(int *desc, int *m, int *n, int *mb, int *nb, int *isrc,
+		int *icsrc, int *ictxt, int *lld, int *info);
+
+// BLACS routines
+int Cblacs_pinfo(int *mypnum, int *nprocs);
+int Cblacs_get(int icontxt, int what, int *val);
+int Cblacs_gridinit(int *ictxt, char *order, int nprow, int npcol);
+int Cblacs_gridinfo(int ictxt, int *nprow, int *npcol, int *myprow,
+		int *mypcol);
 
 void init_parallel(int argc, char **argv);
 void finalise_parallel();

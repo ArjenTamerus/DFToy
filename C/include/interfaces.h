@@ -1,3 +1,6 @@
+#ifndef TC_INTERFACES_H
+#define TC_INTERFACES_H
+
 #include <stdbool.h>
 #include <complex.h>
 #include <fftw3.h>
@@ -73,3 +76,5 @@ void get_configuration_params(int argc, char **argv,
 void set_int_param(long int *param, const char *param_value,
 		const char *param_name);
 int get_diag_mode(const char *diag_param);
+
+#endif
