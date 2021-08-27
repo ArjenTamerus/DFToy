@@ -14,6 +14,7 @@ in the near future)
  - C/Fortran compiler
  - LAPACK
  - BLAS
+ - FFTW
 
 ## C version only
  - MPI library/compiler
@@ -33,7 +34,7 @@ Update the `Makefile` to suit your compiler/MPI/library paths and flags and run
 
 For a basic run with default parameters:
 
-`mpirun -np $<num_procs> dftoy`
+`mpirun -np <num_procs> dftoy`
 
 Run `dftoy --usage` for an overview of the available configuration parameters.
 
