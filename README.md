@@ -38,6 +38,12 @@ For a basic run with default parameters:
 
 Run `dftoy --usage` for an overview of the available configuration parameters.
 
+### Running larger simulations
+
+The time (and memory) required to solve the eigenstate problem in 3D exactly
+increases _very rapidly_ with the number of wavevectors. It is recommended to
+only run the iterative solver (`dftoy --iterative`) for larger problems.
+
 ## Fortran
 
 Run `eigensolver`.
