@@ -142,7 +142,6 @@ int get_diag_mode(const char *diag_param)
 	}
 
 	if(diag) {
-		printf("HAI\n");
 		if(!strncmp(diag, "ZHEEV", 5)) {
 			mode = 0;
 		}
