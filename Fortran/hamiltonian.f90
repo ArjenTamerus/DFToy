@@ -37,7 +37,7 @@ subroutine init_H(num_pw,H_kinetic,H_local)
         pos = idz*(num_pw**2) + idy * num_pw + idx + 1
         !write(*,*) "POS=", pos
         H_kinetic(pos) = 0.5_dp*real(npx**2+npy**2+npz**2,kind=dp)
-        H_local(pos) = -0.37/(0.005 + abs(sqrt(real(npx**2+npy**2+npx**2,kind=dp))/real(num_pw**3,kind=dp) - 0.5))
+        H_local(pos) = -0.37/(0.005 + abs(sqrt(real(npx**2+npy**2+npz**2,kind=dp))/real(num_pw**3,kind=dp) - 0.5))
         !H_kinetic(num_pw-(np-1)) = H_kinetic(np+1)
       end do
     end do
