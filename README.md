@@ -48,3 +48,6 @@ The time (and memory) required to solve the eigenstate problem in 3D by exact
 diagonalisation increases _very rapidly_ with the number of wavevectors. It is
 recommended to only run the iterative solver (`dftoy --iterative`) for larger
 problems.
+
+## Different results between C and Fortran
+This is currently being looked into.
