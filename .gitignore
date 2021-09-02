@@ -1,6 +1,7 @@
 eigensolver
 dftoy
 *.o
+*.mod
 *.a
 *.so
 *.out
