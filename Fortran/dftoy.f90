@@ -1,4 +1,4 @@
-program eigensolver
+program DFToy
   !-------------------------------------------------!
   ! This program is designed to illustrate the use  !
   ! of numerical methods and optimised software     !
@@ -29,6 +29,7 @@ program eigensolver
   real(kind=dp),    dimension(:),   allocatable   :: H_local    ! the local potential operator
   integer                                         :: num_wavevectors ! no. wavevectors in the basis
   integer                                         :: num_pw     ! no. plane-waves = 2*wavevectors+1
+  integer                                         :: num_pw_3d     ! no. plane-waves^3 
   integer                                         :: num_states ! no. eigenstates req'd
 
   complex(kind=dp), dimension(:,:), allocatable   :: trial_wvfn       ! current best guess at wvfn
@@ -68,11 +69,12 @@ program eigensolver
   complex(kind=dp),external :: zdotc
 
   ! No. nonzero wavevectors "G" in our wavefunction expansion
-  num_wavevectors = 100
+  num_wavevectors = 3
 
   ! No. plane-waves in our wavefunction expansion. One plane-wave has
   ! wavevector 0, and for all the others there are plane-waves at +/- G
   num_pw = 2*num_wavevectors+1
+  num_pw_3d = num_pw**3
 
   ! No. eigenstates to compute
   num_states = 1
@@ -90,10 +92,10 @@ program eigensolver
 
   ! Now we need to allocate space for the Hamiltonian terms, and call
   ! the initialisation subroutine
-  allocate(H_kinetic(num_pw),stat=status)
+  allocate(H_kinetic(num_pw_3d),stat=status)
   if(status/=0) stop 'Error allocating RAM to H_kinetic'
 
-  allocate(H_local(num_pw),stat=status)
+  allocate(H_local(num_pw_3d),stat=status)
   if(status/=0) stop 'Error allocating RAM to H_local'
 
   write(*,*) 'Initialising Hamiltonian...'
@@ -108,7 +110,7 @@ program eigensolver
   ! Perform an exact diagonalisation for comparison
   call cpu_time(init_cpu_time)
 
-  allocate(full_eigenvalue(num_pw),stat=status)
+  allocate(full_eigenvalue(num_pw_3d),stat=status)
   if(status/=0) stop 'Error allocating RAM to full_eigenvalue'
 
   write(*,*) 'Starting full diagonalisation...'
@@ -140,8 +142,8 @@ program eigensolver
   ! Allocate memory for iterative eigenvector search
   ! Each column contains the plane wave co-efficients for a single particle wavefunction
   ! and there are num_states particles.
-  allocate(trial_wvfn(num_pw,num_states),gradient(num_pw,num_states),search_direction(num_pw,num_states), &
-           prev_search_direction(num_pw,num_states),stat=status)
+  allocate(trial_wvfn(num_pw_3d,num_states),gradient(num_pw_3d,num_states),search_direction(num_pw_3d,num_states), &
+           prev_search_direction(num_pw_3d,num_states),stat=status)
   if(status/=0) stop 'Error allocating RAM to trial_wvfn, gradient, search_direction and prev_search_direction'
 
   ! We have num_states eigenvalue estimates
@@ -166,7 +168,7 @@ program eigensolver
 
   ! All the wavefunctions should be normalised and orthogonal to each other
   ! at every iteration. We enforce this in the initial random state here.
-  call orthonormalise(num_pw,num_states,trial_wvfn)
+  call orthonormalise(num_pw_3d,num_states,trial_wvfn)
 
   ! Apply the H to this state, store the result H.wvfn in gradient. As yet this is
   ! unconstrained, i.e. following this gradient will break orthonormality.
@@ -176,7 +178,7 @@ program eigensolver
   ! Note that we don't compute a denominator here because our trial states
   ! are normalised.
   do nb=1,num_states
-    eigenvalue(nb) = real(zdotc(num_pw,trial_wvfn(1,nb),1,gradient(1,nb),1),dp)
+    eigenvalue(nb) = real(zdotc(num_pw_3d,trial_wvfn(1,nb),1,gradient(1,nb),1),dp)
   end do
 
   ! Energy is the sum of the eigenvalues.
@@ -200,11 +202,11 @@ program eigensolver
     ! calling the routine below. Remember H.wvfn is already               !
     ! stored as gradient.                                                 !
     !---------------------------------------------------------------------!
-    call orthogonalise(num_pw,num_states,gradient,trial_wvfn)
+    call orthogonalise(num_pw_3d,num_states,gradient,trial_wvfn)
 
     ! The steepest descent direction is minus the gradient
-    call zcopy(num_pw*num_states,gradient,1,search_direction,1)
-    call zdscal(num_pw*num_states,-1.0_dp,search_direction,1)
+    call zcopy(num_pw_3d*num_states,gradient,1,search_direction,1)
+    call zdscal(num_pw_3d*num_states,-1.0_dp,search_direction,1)
 
     !---------------------------------------------------------------------!
     ! Any modifications to the search direction go here, e.g.             !
@@ -212,27 +214,27 @@ program eigensolver
     !---------------------------------------------------------------------!
 
     ! Precondition, which breaks orthogonalisation so also re-orthogonalise
-    call precondition(num_pw,num_states,search_direction,trial_wvfn,H_kinetic)
-    call orthogonalise(num_pw,num_states,search_direction,trial_wvfn)    
+    call precondition(num_pw_3d,num_states,search_direction,trial_wvfn,H_kinetic)
+    call orthogonalise(num_pw_3d,num_states,search_direction,trial_wvfn)    
 
     ! Use Fletcher-Reeves conjugate gradients (CG)
     cg_beta = 0.0_dp
     do i=1,num_states
-       cg_beta = cg_beta + real(zdotc(num_pw,search_direction(:,i),1,gradient(:,i),1),dp)
+       cg_beta = cg_beta + real(zdotc(num_pw_3d,search_direction(:,i),1,gradient(:,i),1),dp)
     end do
 
     if(.not.reset_sd) then  ! this is false on the first call, so cg_beta_old will be defined
       cg_gamma         = cg_beta/cg_beta_old
       cg_beta_old      = cg_beta
-      call zaxpy(num_pw*num_states,cmplx(cg_gamma,0.0_dp,dp),prev_search_direction,1,search_direction,1)
+      call zaxpy(num_pw_3d*num_states,cmplx(cg_gamma,0.0_dp,dp),prev_search_direction,1,search_direction,1)
 
-      call orthogonalise(num_pw,num_states,search_direction,trial_wvfn)    
+      call orthogonalise(num_pw_3d,num_states,search_direction,trial_wvfn)    
     
     end if
 
     cg_beta_old = cg_beta
 
-    call zcopy(num_pw*num_states,search_direction,1,prev_search_direction,1);
+    call zcopy(num_pw_3d*num_states,search_direction,1,prev_search_direction,1);
 
     ! Search along this direction for the best approx. eigenvector, i.e. the lowest energy
     call line_search(num_pw,num_states,trial_wvfn,H_kinetic,H_local,search_direction,gradient,eigenvalue,energy)
@@ -268,7 +270,7 @@ program eigensolver
   !
   ! This can be done in the "diagonalise" routine, BUT YOU NEED TO COMPLETE IT
 
-  call diagonalise(num_pw,num_states,trial_wvfn,gradient,eigenvalue,rotation)
+  call diagonalise(num_pw_3d,num_states,trial_wvfn,gradient,eigenvalue,rotation)
 
   call cpu_time(curr_cpu_time)
 
@@ -292,7 +294,7 @@ program eigensolver
   write(*,*) '============================================='
   write(*,*) ' '
 
-  call output_results(num_pw,num_states,H_local,trial_wvfn)
+  call output_results(num_pw_3d,num_states,H_local,trial_wvfn)
 
   ! Deallocate memory
   deallocate(full_eigenvalue,stat=status)
@@ -314,7 +316,7 @@ program eigensolver
   if(status/=0) stop 'Error deallocating RAM from rotation'
 
 
-end program eigensolver
+end program DFToy
 
   !---------------------------------------------------------------------!
   !           -- THESE ARE THE COMPLETED SUBROUTINES --           !
@@ -332,17 +334,20 @@ end program eigensolver
     integer, parameter                           :: dp=selected_real_kind(15,300)
 
     integer,                                    intent(in)  :: num_pw
-    real(kind=dp),  dimension(num_pw),          intent(in)  :: H_kinetic
-    real(kind=dp),  dimension(num_pw),          intent(in)  :: H_local
-    real(kind=dp),  dimension(num_pw),          intent(out) :: full_eigenvalue
+    real(kind=dp),  dimension(num_pw**3),          intent(in)  :: H_kinetic
+    real(kind=dp),  dimension(num_pw**3),          intent(in)  :: H_local
+    real(kind=dp),  dimension(num_pw**3),          intent(out) :: full_eigenvalue
 
     complex(kind=dp), dimension(:,:), allocatable :: full_H
     real(kind=dp),    dimension(:),   allocatable :: lapack_real_work
     complex(kind=dp), dimension(:),   allocatable :: lapack_cmplx_work
+
+    integer                                       :: num_pw_3d
     integer                                       :: status,np
 
+    num_pw_3d = num_pw ** 3
     ! First we allocate and construct the full num_pw x num_pw Hamiltonian
-    allocate(full_H(num_pw,num_pw),stat=status)
+    allocate(full_H(num_pw_3d,num_pw_3d),stat=status)
     if(status/=0) stop 'Error allocating RAM to full_H in exact_diagonalisation'
 
     call construct_full_H(num_pw,H_kinetic,H_local,full_H)
@@ -351,16 +356,16 @@ end program eigensolver
     ! Use LAPACK's zheev to get the eigenvalues and eigenvectors of       !
     ! full_H (NB the matrix is Hermitian)                                 !
     !---------------------------------------------------------------------!
-    allocate(lapack_real_work(3*num_pw-2),stat=status)
+    allocate(lapack_real_work(3*num_pw_3d-2),stat=status)
     if(status/=0) stop 'Error allocating RAM to lapack_real_work in exact_diagonalisation'
 
-    allocate(lapack_cmplx_work(2*num_pw-1),stat=status)
+    allocate(lapack_cmplx_work(2*num_pw_3d-1),stat=status)
     if(status/=0) stop 'Error allocating RAM to lapack_cmplx_work in exact_diagonalisation'
 
     lapack_real_work  = 0.0_dp
     lapack_cmplx_work = cmplx(0.0_dp,0.0_dp,dp)
 
-    call zheev('V','U',num_pw,full_H,size(full_H,1),full_eigenvalue,lapack_cmplx_work, &
+    call zheev('V','U',num_pw_3d,full_H,size(full_H,1),full_eigenvalue,lapack_cmplx_work, &
              & size(lapack_cmplx_work,1),lapack_real_work,status)
     if(status/=0) stop 'Error with zheev in exact_diagonalisation'
 
@@ -658,11 +663,11 @@ end program eigensolver
 
     integer,                                        intent(in)    :: num_pw
     integer,                                        intent(in)    :: num_states
-    complex(kind=dp), dimension(num_pw,num_states), intent(inout) :: approx_state
-    real(kind=dp), dimension(num_pw),               intent(in)    :: H_kinetic
-    real(kind=dp), dimension(num_pw),               intent(in)    :: H_local
-    complex(kind=dp), dimension(num_pw,num_states), intent(inout) :: direction
-    complex(kind=dp), dimension(num_pw,num_states), intent(inout) :: gradient
+    complex(kind=dp), dimension(num_pw**3,num_states), intent(inout) :: approx_state
+    real(kind=dp), dimension(num_pw**3),               intent(in)    :: H_kinetic
+    real(kind=dp), dimension(num_pw**3),               intent(in)    :: H_local
+    complex(kind=dp), dimension(num_pw**3,num_states), intent(inout) :: direction
+    complex(kind=dp), dimension(num_pw**3,num_states), intent(inout) :: gradient
     real(kind=dp),                                  intent(inout) :: energy
     real(kind=dp), dimension(num_states),           intent(inout) :: eigenvalue
 
@@ -681,24 +686,27 @@ end program eigensolver
     integer                                       :: loop
     integer                                       :: nb
     integer                                       :: status
+    integer :: num_pw_3d
 
     ! BLAS external functions
     real(kind=dp),    external :: dznrm2
     complex(kind=dp), external :: zdotc
 
+    num_pw_3d = num_pw**3
+
     ! To try to keep a convenient step length, we reduce the size of the search direction
     mean_norm = 0.0_dp
     do nb=1,size(approx_state,2)
-      mean_norm = mean_norm + dznrm2(num_pw,direction(1,nb),1)
+      mean_norm = mean_norm + dznrm2(num_pw_3d,direction(1,nb),1)
     end do
     mean_norm = mean_norm/real(size(approx_state,2),dp)
 
-    call zdscal(num_pw*num_states,1.0_dp/mean_norm,direction,1)
+    call zdscal(num_pw_3d*num_states,1.0_dp/mean_norm,direction,1)
 
     ! The rate-of-change of the energy is just 2*Re(conjg(direction).gradient)
     denergy_dstep = 0.0_dp 
     do nb=1,size(approx_state,2)
-      denergy_dstep = denergy_dstep + 2*real(zdotc(num_pw,direction(:,nb),1,gradient(:,nb),1),dp)
+      denergy_dstep = denergy_dstep + 2*real(zdotc(num_pw_3d,direction(:,nb),1,gradient(:,nb),1),dp)
     end do
 
     allocate(tmp_state(size(approx_state,1),size(approx_state,2)),stat=status)
@@ -715,7 +723,7 @@ end program eigensolver
        
       tmp_state = approx_state + step*direction
 
-      call orthonormalise(num_pw,num_states,tmp_state)
+      call orthonormalise(num_pw_3d,num_states,tmp_state)
 
       ! Apply the Hamiltonian to this state
       call apply_H(num_pw,num_states,tmp_state,H_kinetic,H_local,gradient)
@@ -723,7 +731,7 @@ end program eigensolver
       ! Compute the new energy estimate
       tmp_energy = 0.0_dp 
       do nb=1,num_states
-        tmp_energy = tmp_energy + real(zdotc(num_pw,tmp_state(:,nb),1,gradient(:,nb),1),dp)
+        tmp_energy = tmp_energy + real(zdotc(num_pw_3d,tmp_state(:,nb),1,gradient(:,nb),1),dp)
       end do
 
       if(tmp_energy<energy) then
@@ -775,9 +783,9 @@ end program eigensolver
     !
     !    dE/dx = dE + 2*c*x
 
-    call zaxpy(num_pw*num_states,cmplx(opt_step,0.0_dp,dp),direction,1,approx_state,1)
+    call zaxpy(num_pw_3d*num_states,cmplx(opt_step,0.0_dp,dp),direction,1,approx_state,1)
 
-    call orthonormalise(num_pw,num_states,approx_state)
+    call orthonormalise(num_pw_3d,num_states,approx_state)
 
     ! Apply the H to this state
     call apply_H(num_pw,num_states,approx_state,H_kinetic,H_local,gradient)
@@ -785,7 +793,7 @@ end program eigensolver
     ! Compute the new energy estimate
     energy = 0.0_dp 
     do nb=1,size(approx_state,2)
-      eigenvalue(nb) = real(zdotc(num_pw,approx_state(:,nb),1,gradient(:,nb),1),dp)
+      eigenvalue(nb) = real(zdotc(num_pw_3d,approx_state(:,nb),1,gradient(:,nb),1),dp)
       energy = energy + eigenvalue(nb)
     end do
 
@@ -794,9 +802,9 @@ end program eigensolver
 
       if(abs(best_step-epsilon(1.0_dp))>0.0_dp) then
 
-        call zaxpy(num_pw*num_states,cmplx(best_step,0.0_dp,dp),direction,1,gradient,1)
+        call zaxpy(num_pw_3d*num_states,cmplx(best_step,0.0_dp,dp),direction,1,gradient,1)
 
-        call orthonormalise(num_pw,num_states,approx_state)
+        call orthonormalise(num_pw_3d,num_states,approx_state)
 
         ! Apply the H to this state
         call apply_H(num_pw,num_states,approx_state,H_kinetic,H_local,gradient)
@@ -804,7 +812,7 @@ end program eigensolver
         ! Compute the new energy estimate
         energy = 0.0_dp 
         do nb=1,size(approx_state,2)
-          eigenvalue(nb) = real(zdotc(num_pw,approx_state(:,nb),1,gradient(:,nb),1),dp)
+          eigenvalue(nb) = real(zdotc(num_pw_3d,approx_state(:,nb),1,gradient(:,nb),1),dp)
           energy = energy + eigenvalue(nb)
         end do
       

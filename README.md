@@ -5,9 +5,6 @@
 Performs exact and/or iterative calculation of the Eigenstates of a simple
 system, representative of a simple DFT calculation.
 
-NOTE: Fortran version is currently 1D (will be updated to support 3D calculation
-in the near future)
-
 # Requirements
 
 ## Both versions
@@ -38,15 +35,16 @@ For a basic run with default parameters:
 
 Run `dftoy --usage` for an overview of the available configuration parameters.
 
-### Running larger simulations
-
-The time (and memory) required to solve the eigenstate problem in 3D exactly
-increases _very rapidly_ with the number of wavevectors. It is recommended to
-only run the iterative solver (`dftoy --iterative`) for larger problems.
-
 ## Fortran
 
-Run `eigensolver`.
+Run `dftoy`.
 
-To change the configuration, change the `num_wavevectors` and `num_states` in
-`Fortran/eigensolver.f90` and recompile.
+To change the configuration, change the `num_wavevectors` and `num_states` 
+parameters in `Fortran/dftoy.f90` and recompile.
+
+## Running larger simulations
+
+The time (and memory) required to solve the eigenstate problem in 3D by exact
+diagonalisation increases _very rapidly_ with the number of wavevectors. It is
+recommended to only run the iterative solver (`dftoy --iterative`) for larger
+problems.

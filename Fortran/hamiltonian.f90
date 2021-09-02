@@ -14,10 +14,12 @@ subroutine init_H(num_pw,H_kinetic,H_local)
   integer,       parameter                               :: dp=selected_real_kind(15,300)
 
   integer,                                   intent(in)  :: num_pw
-  real(kind=dp), dimension(num_pw),          intent(out) :: H_kinetic
-  real(kind=dp), dimension(num_pw),          intent(out) :: H_local
+  real(kind=dp), dimension(num_pw**3),          intent(out) :: H_kinetic
+  real(kind=dp), dimension(num_pw**3),          intent(out) :: H_local
 
-  integer                                                :: np,status
+  integer                                                :: npx,npy,npz
+  integer                                                :: idx,idy,idz
+  integer                                                :: pos,status
 
   ! Set the kinetic energy operator in reciprocal-space
   ! NB np=1 is the G=0 element
@@ -25,28 +27,39 @@ subroutine init_H(num_pw,H_kinetic,H_local)
   !    np=3 has its conjugate at np=num_pw-1
   !                  etc.
   H_kinetic(1) = 0.0_dp
-  do np=1,num_pw/2
-     H_kinetic(np+1) = 0.5_dp*real(np,kind=dp)**2
-     H_kinetic(num_pw-(np-1)) = H_kinetic(np+1)
+  do npz=-(num_pw/2),num_pw/2
+    idz = merge(npz+num_pw, npz, npz < 0)
+    do npy=-(num_pw/2),num_pw/2
+      idy = merge(npy+num_pw, npy, npy < 0)
+      do npx=-(num_pw/2),num_pw/2
+        idx = merge(npx+num_pw, npx, npx < 0)
+
+        pos = idz*(num_pw**2) + idy * num_pw + idx + 1
+        !write(*,*) "POS=", pos
+        H_kinetic(pos) = 0.5_dp*real(npx**2+npy**2+npz**2,kind=dp)
+        H_local(pos) = -0.37/(0.005 + abs(sqrt(real(npx**2+npy**2+npx**2,kind=dp))/real(num_pw**3,kind=dp) - 0.5))
+        !H_kinetic(num_pw-(np-1)) = H_kinetic(np+1)
+      end do
+    end do
   end do
 
-  ! Set the local potential operator in real-space (centred on the middle of the 1D cell)
-  H_local = 0.0_dp
-  do np=1,num_pw
-!     ! Gaussian -- good, but very few plane-waves required
-!     H_local(np) = -6.0_dp*exp(-((real(np-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp)**2)/(2*0.1_dp**2))
+!  ! Set the local potential operator in real-space (centred on the middle of the 1D cell)
+!  H_local = 0.0_dp
+!  do npx=1,num_pw
+!!     ! Gaussian -- good, but very few plane-waves required
+!!     H_local(npx) = -6.0_dp*exp(-((real(npx-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp)**2)/(2*0.1_dp**2))
+!
+!!     ! -1/r -- too many plane-waves required
+!!     H_local(npx) = -1.00_dp/(abs((real(npx-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp)))
+!
+!     ! Sort-of pseudopotential -- ~1/r asymptotically, but finite at nucleus
+!     H_local(npx) = -0.37_dp/(0.005_dp+abs((real(npx-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp)))
+!
+!!    ! Hooke's atom
+!!     H_local(np) = 10.0_dp*(-1.0_dp+4*((real(np-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp))**2)
+!  end do
 
-!     ! -1/r -- too many plane-waves required
-!     H_local(np) = -1.00_dp/(abs((real(np-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp)))
-
-     ! Sort-of pseudopotential -- ~1/r asymptotically, but finite at nucleus
-     H_local(np) = -0.37_dp/(0.005_dp+abs((real(np-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp)))
-
-!    ! Hooke's atom
-!     H_local(np) = 10.0_dp*(-1.0_dp+4*((real(np-1,kind=dp)/real(num_pw,kind=dp)-0.5_dp))**2)
-  end do
-
-  return
+!  return
 
 end subroutine init_H
 
@@ -64,10 +77,10 @@ subroutine apply_H(num_pw,num_states,state,H_kinetic,H_local,H_state)
   
   integer,                                        intent(in)  :: num_pw
   integer,                                        intent(in)  :: num_states
-  complex(kind=dp), dimension(num_pw,num_states), intent(in)  :: state
-  real(kind=dp),    dimension(num_pw),            intent(in)  :: H_kinetic
-  real(kind=dp),    dimension(num_pw),            intent(in)  :: H_local
-  complex(kind=dp), dimension(num_pw,num_states), intent(out) :: H_state
+  complex(kind=dp), dimension(num_pw**3,num_states), intent(in)  :: state
+  real(kind=dp),    dimension(num_pw**3),            intent(in)  :: H_kinetic
+  real(kind=dp),    dimension(num_pw**3),            intent(in)  :: H_local
+  complex(kind=dp), dimension(num_pw**3,num_states), intent(out) :: H_state
 
   integer                                     :: np
   integer                                     :: nb
@@ -77,10 +90,10 @@ subroutine apply_H(num_pw,num_states,state,H_kinetic,H_local,H_state)
 
   type(C_PTR) :: plan                       ! force C-pointer (prob. 64-bit)
 
-  allocate(tmp_state(num_pw),stat=status)
+  allocate(tmp_state(num_pw**3),stat=status)
   if(status/=0) stop 'Error allocating tmp_state in apply_H'
 
-  allocate(tmp_state_in(num_pw),stat=status)
+  allocate(tmp_state_in(num_pw**3),stat=status)
   if(status/=0) stop 'Error allocating tmp_state in apply_H'
 
   ! Loop over the states
@@ -91,22 +104,22 @@ subroutine apply_H(num_pw,num_states,state,H_kinetic,H_local,H_state)
     ! First create a plan. We want a forward transform and we want to estimate
     ! (rather than measure) the most efficient way to perform the transform.
 !    plan = fftw_plan_dft_1d(num_pw,state(:,nb),tmp_state,FFTW_FORWARD,FFTW_ESTIMATE)
-    plan = fftw_plan_dft_1d(num_pw,tmp_state_in,tmp_state,FFTW_FORWARD,FFTW_ESTIMATE)
+    plan = fftw_plan_dft_3d(num_pw,num_pw,num_pw,tmp_state_in,tmp_state,FFTW_FORWARD,FFTW_ESTIMATE)
 
     ! Compute the FFT of in using the current plan, store in out.
     tmp_state_in = state(:,nb)
     call fftw_execute_dft(plan,tmp_state_in,tmp_state)
 
     ! Apply the local potential in real-space, remembering normalisation of 1/grid-points
-    do np=1,num_pw
-       tmp_state(np) = H_local(np)*tmp_state(np)/real(num_pw,kind=dp)
+    do np=1,num_pw**3
+       tmp_state(np) = H_local(np)*tmp_state(np)/real(num_pw**3,kind=dp)
     end do
 
     ! Now transform back
     !
     ! Create a plan. We want a backward transform and we want to estimate
     ! (rather than measure) most efficient way to perform the transform.
-    plan = fftw_plan_dft_1d(num_pw,tmp_state_in,tmp_state,FFTW_BACKWARD,FFTW_ESTIMATE)
+    plan = fftw_plan_dft_3d(num_pw,num_pw,num_pw,tmp_state_in,tmp_state,FFTW_BACKWARD,FFTW_ESTIMATE)
 !    plan = fftw_plan_dft_1d(num_pw,state(:,nb),tmp_state,FFTW_BACKWARD,FFTW_ESTIMATE)
 !    call fftw_plan_dft_1d(plan,num_pw,FFTW_BACKWARD,FFTW_ESTIMATE)
 
@@ -114,7 +127,7 @@ subroutine apply_H(num_pw,num_states,state,H_kinetic,H_local,H_state)
     call fftw_execute_dft(plan,tmp_state,H_state(:,nb))
 
     ! Add in the contribution from the kinetic term
-    do np=1,num_pw
+    do np=1,num_pw**3
        H_state(np,nb) = H_state(np,nb) + H_kinetic(np)*state(np,nb)
     end do
 
@@ -140,33 +153,37 @@ subroutine construct_full_H(num_pw,H_kinetic,H_local,full_H)
   integer, parameter :: dp=selected_real_kind(15,300)
 
   integer,                                     intent(in)  :: num_pw
-  real(kind=dp),    dimension(num_pw),         intent(in)  :: H_kinetic
-  real(kind=dp),    dimension(num_pw),         intent(in)  :: H_local
-  complex(kind=dp), dimension(num_pw,num_pw),  intent(out) :: full_H
+  real(kind=dp),    dimension(num_pw**3),         intent(in)  :: H_kinetic
+  real(kind=dp),    dimension(num_pw**3),         intent(in)  :: H_local
+  complex(kind=dp), dimension(num_pw**3,num_pw**3),  intent(out) :: full_H
 
   complex(kind=dp), dimension(:), allocatable :: tmp_state1,tmp_state2
+
+  integer                                     :: num_pw_3d
   integer                                     :: np1,np2,status
 
   type(C_PTR) :: plan                       ! needs to be a 64-bit C pointer
+
+  num_pw_3d = num_pw**3
 
   ! Initialise the output matrix
   full_H = cmplx(0.0_dp,0.0_dp,dp)
 
   ! First add the contribution from the local potential term
 
-  allocate(tmp_state1(num_pw),stat=status)
+  allocate(tmp_state1(num_pw_3d),stat=status)
   if(status/=0) stop 'Error allocating tmp_stat1 in construct_full_H'
 
-  allocate(tmp_state2(num_pw),stat=status)
+  allocate(tmp_state2(num_pw_3d),stat=status)
   if(status/=0) stop 'Error allocating tmp_stat1 in construct_full_H'
 
   tmp_state1 = cmplx(0.0_dp,0.0_dp,dp)
   tmp_state2 = cmplx(0.0_dp,0.0_dp,dp)
 
-  do np1=1,num_pw
+  do np1=1,num_pw_3d
     ! First create a plan. We want a forward transform and we want to estimate
     ! (rather than measure) the most efficient way to perform the transform.
-    plan = fftw_plan_dft_1d(num_pw,tmp_state1,tmp_state2,FFTW_FORWARD,FFTW_ESTIMATE)
+    plan = fftw_plan_dft_3d(num_pw,num_pw,num_pw,tmp_state1,tmp_state2,FFTW_FORWARD,FFTW_ESTIMATE)
 
     tmp_state1 = cmplx(0.0_dp,0.0_dp,dp)
 
@@ -176,20 +193,20 @@ subroutine construct_full_H(num_pw,H_kinetic,H_local,full_H)
     call fftw_execute_dft(plan,tmp_state1,tmp_state2)
 
     ! Apply the local potential in real-space, remembering normalisation of 1/grid-points
-    do np2=1,num_pw
-       tmp_state2(np2) = H_local(np2)*tmp_state2(np2)/real(num_pw,kind=dp)
+    do np2=1,num_pw_3d
+       tmp_state2(np2) = H_local(np2)*tmp_state2(np2)/real(num_pw_3d,kind=dp)
     end do
 
     ! Now transform back
     !
     ! Create a plan. We want a backward transform and we want to estimate
     ! (rather than measure) most efficient way to perform the transform.
-    plan = fftw_plan_dft_1d(num_pw,tmp_state1,tmp_state2,FFTW_BACKWARD,FFTW_ESTIMATE)
+    plan = fftw_plan_dft_3d(num_pw,num_pw,num_pw,tmp_state1,tmp_state2,FFTW_BACKWARD,FFTW_ESTIMATE)
 
     ! Compute the FFT of in using the current plan, store in out.
     call fftw_execute_dft(plan,tmp_state2,tmp_state1)
 
-    do np2=1,num_pw
+    do np2=1,num_pw_3d
       full_H(np2,np1) = tmp_state1(np2)
     end do
 
@@ -202,7 +219,7 @@ subroutine construct_full_H(num_pw,H_kinetic,H_local,full_H)
   if(status/=0) stop 'Error deallocating tmp_stat1 in construct_full_H'
 
   ! Now add the contribution from the kinetic term
-  do np1=1,num_pw
+  do np1=1,num_pw_3d
      full_H(np1,np1) = full_H(np1,np1) + cmplx(H_kinetic(np1),0.0_dp,dp)
   end do
 
@@ -252,11 +269,12 @@ subroutine randomise_state(num_pw,num_states,state)
 
   integer,                                     intent(in)    :: num_pw
   integer,                                     intent(in)    :: num_states
-  complex(kind=dp), dimension(num_pw,num_states), intent(inout) :: state
+  complex(kind=dp), dimension(num_pw**3,num_states), intent(inout) :: state
 
   integer                                      :: np
   integer                                      :: nb
   real(kind=dp)                                :: rnd1,rnd2
+  integer :: offset
 
   ! Set the state randomly s.t. each element lies in [-1,1)
   do nb=1,num_states
@@ -265,11 +283,13 @@ subroutine randomise_state(num_pw,num_states,state)
      call random_number(rnd1)
      state(1,nb) = cmplx(rnd1,0.0_dp,dp)
 
-     do np=1,num_pw/2
-        call random_number(rnd1)
-        call random_number(rnd2)
-        state(np+1,nb) = 2*cmplx(rnd1-0.5_dp,rnd2-0.5_dp,dp)
-        state(num_pw-(np-1),nb) = conjg(state(np+1,nb))
+     do offset=0,num_pw**2,num_pw
+       do np=1,num_pw/2
+          call random_number(rnd1)
+          call random_number(rnd2)
+          state(offset+np+1,nb) = 2*cmplx(rnd1-0.5_dp,rnd2-0.5_dp,dp)
+          state(offset+num_pw-(np-1),nb) = conjg(state(np+1,nb))
+       end do
      end do
 
 !     if(2*(num_pw/2)==num_pw) state(num_pw/2,nb) = real(state(num_pw/2,nb),dp)
