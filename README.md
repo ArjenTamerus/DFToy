@@ -49,5 +49,3 @@ diagonalisation increases _very rapidly_ with the number of wavevectors. It is
 recommended to only run the iterative solver (`dftoy --iterative`) for larger
 problems.
 
-## Different results between C and Fortran
-This is currently being looked into.
