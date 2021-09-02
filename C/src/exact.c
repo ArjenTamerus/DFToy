@@ -80,7 +80,7 @@ void construct_hamiltonian(fftw_complex *full_H, double *H_kinetic,
 		fftw_execute_dft(plan_forward, tmp_state_1, tmp_state_2);
 
 		for(j = 0; j < num_pw_3d; j++) {
-			tmp_state_2[j] *= H_local[j]/num_pw_3d;
+			tmp_state_2[j] *= H_local[j] * tmp_state_2[j]/num_pw_3d;
 		}
 
 		fftw_execute_dft(plan_backward, tmp_state_2, tmp_state_1);
