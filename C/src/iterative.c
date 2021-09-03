@@ -12,6 +12,7 @@
 #include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
+#include "trace.h"
 
 void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 		double *H_local, fftw_complex *exact_state)
@@ -20,7 +21,12 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 							 *gradient,
 							 *rotation;
 	double *eigenvalues;
-	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
+
+	int num_pw_3d;
+
+	struct tc_timer iterative_timer;
+
+	num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
 	mpi_printf("Starting iterative solver\n");
 
@@ -47,6 +53,9 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 		randomise_state(num_plane_waves, num_states, trial_wvfn);
 	}
 
+	iterative_timer = create_timer("Iterative diagonalisation");
+	start_timer(&iterative_timer);
+
 	orthonormalise(num_pw_3d, num_states, trial_wvfn);
 
 	apply_hamiltonian(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
@@ -62,7 +71,12 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 	// Rotate states to approach true eigenstates
 	diagonalise(num_pw_3d,num_states,trial_wvfn,gradient,eigenvalues,rotation);
 
+	stop_timer(&iterative_timer);
+
 	report_eigenvalues(eigenvalues, num_states);
+
+	report_timer(&iterative_timer);
+	destroy_timer(&iterative_timer);
 
 }
 

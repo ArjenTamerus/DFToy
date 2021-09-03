@@ -15,6 +15,7 @@
 #include "parallel.h"
 #include "interfaces.h"
 #include "diag.h"
+#include "trace.h"
 
 fftw_complex *exact_solver(int num_plane_waves, int num_states,
 		double *H_kinetic, double *H_local, const char *exact_diagonaliser,
@@ -22,8 +23,11 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 {
 	fftw_complex *full_H;
 	double *eigenvalues;
+	int num_plane_waves_3D;
 
-	int num_plane_waves_3D = num_plane_waves * num_plane_waves * num_plane_waves;
+	struct tc_timer exact_timer;
+
+	num_plane_waves_3D = num_plane_waves * num_plane_waves * num_plane_waves;
 
 	mpi_printf("Calculating exact state.\n");
 
@@ -33,10 +37,18 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 
 	construct_hamiltonian(full_H, H_kinetic, H_local, num_plane_waves);
 
+	exact_timer = create_timer("Exact diagonalisation");
+
+	start_timer(&exact_timer);
+
 	diagonalise_exact_solution(full_H, eigenvalues, num_plane_waves_3D,
 			num_states, exact_diagonaliser);
 
+	stop_timer(&exact_timer);
+
 	report_eigenvalues(eigenvalues, num_states);
+	report_timer(&exact_timer);
+	destroy_timer(&exact_timer);
 
 	free(eigenvalues);
 
