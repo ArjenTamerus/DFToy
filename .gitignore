@@ -1,0 +1,12 @@
+eigensolver
+dftoy
+*.o
+*.mod
+*.a
+*.so
+*.out
+*.x
+
+*.dat
+
+vallog

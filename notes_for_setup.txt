@@ -1,2 +1,0 @@
-need fftw3 and fftw3-devel
-
