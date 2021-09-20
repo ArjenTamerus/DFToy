@@ -129,6 +129,7 @@ void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
 		case 2:
 			diag_zheevr(full_H, eigenvalues, num_plane_waves, num_states);
 			break;
+#ifdef DFTOY_USE_SCALAPACK
 		case 3:
 			diag_pzheev(full_H, eigenvalues, num_plane_waves);
 			break;
@@ -138,9 +139,12 @@ void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
 		case 5:
 			diag_pzheevr(full_H, eigenvalues, num_plane_waves, num_states);
 			break;
+#endif
+#ifdef DFTOY_USE_ELPA
 		case 6:
 			diag_elpa(full_H, eigenvalues, num_plane_waves);
 			break;
+#endif
 		default:
 			diag_zheev(full_H, eigenvalues, num_plane_waves);
 			break;

@@ -5,6 +5,8 @@
  *
  */
 
+#ifdef DFTOY_USE_ELPA
+
 #include <stdlib.h>
 #include <string.h>
 #include <complex.h>
@@ -119,3 +121,11 @@ void diag_elpa(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
 	TRACEFREE(Z);
 
 }
+
+#else
+
+// Empty C files are against the spec, so define a bogus type to make the
+// compiler happy.
+typedef int dftoy_no_elpa;
+
+#endif

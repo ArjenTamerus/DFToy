@@ -5,6 +5,8 @@
  *
  */
 
+#ifdef DFTOY_USE_SCALAPACK
+
 #include <stdlib.h>
 #include <string.h>
 #include <complex.h>
@@ -199,3 +201,11 @@ void diag_pzheevr(fftw_complex *full_H, double *eigenvalues,
 	TRACEFFTW_FREE(Z);
 	TRACEFFTW_FREE(A);
 }
+
+#else
+
+// Empty C files are against the spec, so define a bogus type to make the
+// compiler happy.
+typedef int dftoy_no_scalapack;
+
+#endif
