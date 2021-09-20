@@ -15,8 +15,8 @@ system, representative of a simple DFT calculation.
 
 ## C version only
  - MPI library/compiler
- - ScaLAPACK (optional) - export `WITH\_SCALAPACK`
- - ELPA (optional) - export `WITH\_ELPA` (implies `WITH\_SCALAPACK`)
+ - ScaLAPACK (optional) - export `WITH_SCALAPACK`
+ - ELPA (optional) - export `WITH_ELPA` (implies `WITH_SCALAPACK`)
 
 # Building
 
