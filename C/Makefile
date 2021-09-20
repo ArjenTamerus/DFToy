@@ -1,19 +1,30 @@
 # Lines for GNU
 OMPI_CC=gcc
 CC=mpicc
-CFLAGS=-std=c99 -g -O3 -Wall -Wpedantic -D_POSIX_C_SOURCE=200809L
-LAPACK_LIBS=-lscalapack-openmpi -llapacke
-ELPA_LIBS=-lelpa
-LDLIBS= $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3 -lm
 CPP=cpp
+CFLAGS=-std=c99 -g -O3 -Wall -Wpedantic -D_POSIX_C_SOURCE=200809L
 
-LAPACK_CPPFLAGS=
-ELPA_CPPFLAGS=-I/usr/include/elpa
-CPPFLAGS=-I/usr/include/ -I./include $(LAPACK_CPPFLAGS) $(ELPA_CPPFLAGS)
-
+LAPACK_LIBS=-llapacke
 LAPACK_LDFLAGS=
-ELPA_LDFLAGS=-L/usr/lib/x86_64-linux-gnu
-LDFLAGS=$(LAPACK_LFLAGS) $(ELPA_LFLAGS) $(LIBS)
+
+ifdef WITH_ELPA
+	export WITH_SCALAPACK=true
+	ELPA_CPPFLAGS=-isystem/usr/include/elpa -DDFTOY_USE_ELPA
+	ELPA_LIBS=-lelpa
+	ELPA_LDFLAGS=-L/usr/lib/x86_64-linux-gnu
+endif
+
+ifdef WITH_SCALAPACK
+	SCALAPACK_CPPFLAGS=-DDFTOY_USE_SCALAPACK
+	SCALAPACK_LIBS=-lscalapack-openmpi
+	SCALAPACK_LDFLAGS=
+endif
+
+
+CPPFLAGS=-I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
+				 $(ELPA_CPPFLAGS)
+LDFLAGS=$(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS)
+LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3 -lm
 
 TARGET=dftoy
 
@@ -22,8 +33,8 @@ OBJDIR=obj
 SRC=$(wildcard $(SRCDIR)/*.c)
 OBJ=$(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
-SOLVERS_CPU=TRUE
-export SOLVERS_CPU
+export CFLAGS
+export CPPFLAGS
 
 NTASKS?=1
 TOYCODE_DIAG?=ZHEEVD

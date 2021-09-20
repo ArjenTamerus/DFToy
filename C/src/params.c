@@ -163,6 +163,7 @@ int get_diag_mode(const char *diag_param)
 		if(!strncmp(diag, "ZHEEVR", 6)) {
 			mode = 2;
 		}
+#ifdef DFTOY_USE_SCALAPACK
 		if(!strncmp(diag, "PZHEEV", 6)) {
 			mode = 3;
 		}
@@ -172,9 +173,12 @@ int get_diag_mode(const char *diag_param)
 		if(!strncmp(diag, "PZHEEVR", 7)) {
 			mode = 5;
 		}
+#endif
+#ifdef DFTOY_USE_ELPA
 		if(!strncmp(diag, "ELPA", 4)) {
 			mode = 6;
 		}
+#endif
 
 		if(mode == -1) {
 			mpi_printf("(II) Unknown diagonaliser %s, defaulting to ZHEEV.\n", diag);

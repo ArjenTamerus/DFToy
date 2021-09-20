@@ -30,6 +30,7 @@ void init_parallel(int argc, char **argv)
 		par_root = true;
 	}
 
+#ifdef DFTOY_USE_SCALAPACK 
 	int blacs_size, blacs_rank;
 	int blacs_grid_dims[2] = {0};
 
@@ -43,6 +44,7 @@ void init_parallel(int argc, char **argv)
 	Cblacs_gridinit(&blacs_ctxt, &cbgi_r, nprow, npcol);
 	Cblacs_gridinit(&blacs_ctxt_root, &cbgi_r, 1, 1);
 	Cblacs_gridinfo(blacs_ctxt, &nprow, &npcol, &myprow, &mypcol);
+#endif
 }
 
 void finalise_parallel()
@@ -101,6 +103,7 @@ void mpi_fail(const char *format, ...)
 void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9], 
 		fftw_complex *matrix, fftw_complex **A, fftw_complex **Z)
 {
+#ifdef DFTOY_USE_SCALAPACK
 	int NB;
 	int MB;
 	int NLOC_A;
@@ -135,5 +138,5 @@ void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9],
 
 	// distribute full matrix (from root) to local submatrices
 	pzgemr2d_(&num_plane_waves, &num_plane_waves, matrix, &one, &one, desc_root, *A, &one, &one, desc, &blacs_ctxt);
-
+#endif
 }
