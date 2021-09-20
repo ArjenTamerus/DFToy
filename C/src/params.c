@@ -20,6 +20,7 @@ struct option tc_params[] = {
 	{"debug_iterative", no_argument, 0, 'd'},
 	{"exact", no_argument, 0, 'e'},
 	{"iterative", no_argument, 0, 'i'},
+	{"help", no_argument, 0, 'h'},
 	{"usage", no_argument, 0, 'u'},
 	{"version", no_argument, 0, 'V'},
 	{0, 0, 0, 0}
@@ -64,7 +65,7 @@ void get_configuration_params(int argc, char **argv,
 
 	// Use getopt to parse command line options
 	while (1) {
-		opt_id = getopt_long_only(argc, argv, "deis:uVw:x:", tc_params, NULL);
+		opt_id = getopt_long_only(argc, argv, "dehis:uVw:x:", tc_params, NULL);
 
 		if(opt_id == -1) {
 			break;
@@ -78,6 +79,11 @@ void get_configuration_params(int argc, char **argv,
 				set_run_exact = true;
 				break;
 
+			case 'h':
+			case 'u':
+				usage();
+				break;
+
 			case 'i':
 				set_run_iterative = true;
 				break;
@@ -88,10 +94,6 @@ void get_configuration_params(int argc, char **argv,
 
 			case 'V':
 				version();
-				break;
-
-			case 'u':
-				usage();
 				break;
 
 			case 'w':
@@ -206,11 +208,12 @@ void usage()
 			" -e, --exact\n"
 			"            Enable exact solver.\n\n"
 			" -i, --iterative\n"
-			"            Enable exact solver.\n\n"
+			"            Enable iterative solver.\n\n"
 			" -s <n>, --states=<n>\n"
 			"            Calculate <n> eigenstates.\n\n"
+			" -h, --help\n"
 			" -u, --usage\n"
-			"            Enable exact solver.\n\n"
+			"            Display this usage info.\n\n"
 			" -V, --version\n"
 			"            Print version information.\n\n"
 			" -w <n>, --wavevectors=<n>\n"
