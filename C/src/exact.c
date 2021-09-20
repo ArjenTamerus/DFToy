@@ -31,6 +31,15 @@ fftw_complex *exact_solver(int num_plane_waves, int num_states,
 
 	mpi_printf("Calculating exact state.\n");
 
+	if (num_plane_waves >= 11) {
+		mpi_printf(
+				"(WW) The exact solver scales extremely slowly: O((w^3)^2 in\n"
+				"(WW) size, O((w^3)^3) in compute. Don't run with w > 5 for\n"
+				"(WW) tests, or w > 8 unless you are testing diagonalisation\n"
+				"(WW) library performance and have plenty of RAM available.\n"
+				);
+	}
+
 	full_H = calloc(num_plane_waves_3D * num_plane_waves_3D,
 			sizeof(fftw_complex));
 	eigenvalues = calloc(num_plane_waves_3D, sizeof(double));
