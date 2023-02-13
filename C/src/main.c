@@ -41,17 +41,17 @@ int main(int argc, char **argv)
 	H_kinetic = calloc(num_pw_3d, sizeof(double));
 	H_local = calloc(num_pw_3d, sizeof(double));
 
-	if (par_root) {
+	//if (par_root) {
 		init_kinetic(H_kinetic, num_plane_waves);
 		init_local(H_local, num_plane_waves);
-	}
+	//}
 
 	if (params.run_exact_solver) {
 		full_H = exact_solver(num_plane_waves, num_states, H_kinetic, H_local,
 				params.exact_solver, params.keep_exact_solution); 
 	}
 
-	if (params.run_iterative_solver && par_root) {
+	if (params.run_iterative_solver) {
 		iterative_solver(num_plane_waves, num_states, H_kinetic, H_local, full_H);
 	}
 
@@ -59,14 +59,15 @@ int main(int argc, char **argv)
 		free(full_H);
 	}
 
-	if(par_root) {
+	//if(par_root) {
 		free(H_kinetic);
 		free(H_local);
-	}
+	//}
 
 	finalise_parallel();
 
-	mpi_printf("Done.\n");
+	//mpi_printf("Done.\n");
+	fprintf(stderr,"Done@%d.\n",world_rank);
 	
 	return 0;
 }

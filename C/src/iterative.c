@@ -8,14 +8,18 @@
 #include <stdio.h>
 #include <complex.h>
 #include <math.h>
-#include <fftw3.h>
+#include <fftw3-mpi.h>
 #include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
 #include "trace.h"
 
-void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
-		double *H_local, fftw_complex *exact_state)
+static ptrdiff_t distr_npw_localsize, distr_local_npw, distr_local_start, distr_local_n0;
+
+
+
+void iterative_solver(int num_plane_waves, int num_states, double *global_H_kinetic,
+		double *global_H_local, fftw_complex *exact_state)
 {
 	fftw_complex *trial_wvfn,
 							 *gradient,
@@ -28,12 +32,21 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 
 	num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
+	distr_npw_localsize = fftw_mpi_local_size_3d(num_plane_waves,
+			num_plane_waves, num_plane_waves, MPI_COMM_WORLD, &distr_local_n0,
+			&distr_local_start);
+
+	distr_local_npw = distr_local_n0 * num_plane_waves * num_plane_waves;
+
+	double *H_kinetic = &(global_H_kinetic[(distr_local_start)*num_plane_waves*num_plane_waves]);
+	double *H_local = &(global_H_local[(distr_local_start)*num_plane_waves*num_plane_waves]);
+	
 	mpi_printf("Starting iterative solver\n");
 
 	init_seed();
 
-	trial_wvfn = calloc(num_pw_3d*num_states, sizeof(fftw_complex));
-	gradient = calloc(num_pw_3d*num_states, sizeof(fftw_complex));
+	trial_wvfn = calloc(distr_npw_localsize*num_states, sizeof(fftw_complex));
+	gradient = calloc(distr_npw_localsize*num_states, sizeof(fftw_complex));
 	rotation = calloc(num_states*num_states, sizeof(fftw_complex));
 
 	eigenvalues = calloc(num_states, sizeof(double));
@@ -56,20 +69,20 @@ void iterative_solver(int num_plane_waves, int num_states, double *H_kinetic,
 	iterative_timer = create_timer("Iterative diagonalisation");
 	start_timer(&iterative_timer);
 
-	orthonormalise(num_pw_3d, num_states, trial_wvfn);
+	orthonormalise(distr_npw_localsize, num_states, trial_wvfn);
 
 	apply_hamiltonian(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
 			gradient);
 
-	calculate_eigenvalues(num_pw_3d, num_states, trial_wvfn, gradient,
+	calculate_eigenvalues(distr_npw_localsize, num_states, trial_wvfn, gradient,
 			eigenvalues);
 
-	// Iterate to find true eigenstates
+	//// Iterate to find true eigenstates
 	iterative_search(num_plane_waves, num_states, H_kinetic, H_local, trial_wvfn,
 			gradient, rotation, eigenvalues);
 
 	// Rotate states to approach true eigenstates
-	diagonalise(num_pw_3d,num_states,trial_wvfn,gradient,eigenvalues,rotation);
+	diagonalise(distr_npw_localsize,num_states,trial_wvfn,gradient,eigenvalues,rotation);
 
 	stop_timer(&iterative_timer);
 
@@ -95,6 +108,9 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 	int offset, offset_ns;
 	fftw_complex rand_val;
 
+
+	fftw_complex *tmp_state = calloc(num_pw_3d*num_states,sizeof(fftw_complex));
+
 // Parallelising this messes with the order of rand() -> let's keep it serial,
 // yeah?
 //#pragma omp parallel for default(none) shared(num_states,num_plane_waves,num_pw_2d,num_pw_3d,state) private(ns,z,y,x,rnd1,rnd2,rand_val,pos,offset,offset_ns)
@@ -102,7 +118,7 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 		offset_ns = ns * num_pw_3d;
 
 		for(z = 0; z < num_plane_waves; z++) {
-			offset = offset_ns + z * num_plane_waves*num_plane_waves;
+			offset = offset_ns + z * num_plane_waves *num_plane_waves;
 
 			for(y = 0; y < num_plane_waves/2+1; y++) {
 
@@ -119,16 +135,16 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 					rand_val = 2*(rnd1 + rnd2*I);
 
 					pos = y * num_plane_waves + x;
-					state[offset+pos] = rand_val;
+					tmp_state[offset+pos] = rand_val;
 
 					pos = (y+1) * num_plane_waves - x - 1;
-					state[offset+pos] = conj(rand_val);
+					tmp_state[offset+pos] = conj(rand_val);
 
 					pos = num_pw_2d - ((y+1) * num_plane_waves - x);
-					state[offset+pos] = -rand_val;
+					tmp_state[offset+pos] = -rand_val;
 
 					pos = num_pw_2d - (y * num_plane_waves + x)-1;
-					state[offset+pos] = -conj(rand_val);
+					tmp_state[offset+pos] = -conj(rand_val);
 				}
 
 			}
@@ -136,6 +152,20 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 		}
 
 	}
+
+	for(ns = 0; ns < num_states; ns++) {
+		for(z = 0; z < distr_local_n0; z++) {
+			for(y = 0; y < num_plane_waves; y++) {
+				for(x = 0; x < num_plane_waves; x++) {
+					state[ns*distr_npw_localsize + z*num_plane_waves*num_plane_waves+y*num_plane_waves+x] =
+						tmp_state[ns*num_pw_3d + (z+distr_local_start)*num_plane_waves*num_plane_waves+y*num_plane_waves+x];
+				}
+			}
+		}
+	}
+
+
+	free(tmp_state);
 
 }
 
@@ -162,38 +192,42 @@ void take_exact_state(int num_plane_waves, int num_states,
 void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 		*trial_wvfn)
 {
-	fftw_complex *overlap;
+	fftw_complex *overlap, *global_overlap;
 	int ns1, ns2, pw;
 	int offset_ns2, offset_ns1;
 	int err;
 
 	overlap = calloc(num_states*num_states, sizeof(fftw_complex));
+	global_overlap = calloc(num_states*num_states, sizeof(fftw_complex));
 
 	// overlap matrix
-#pragma omp parallel for default(none) shared(num_states,num_plane_waves,overlap,trial_wvfn) private(ns1,ns2,offset_ns1,offset_ns2,pw)
+//#pragma omp parallel for default(none) shared(num_states,num_plane_waves,overlap,trial_wvfn) private(ns1,ns2,offset_ns1,offset_ns2,pw)
 	for (ns2 = 0; ns2 < num_states; ns2++) {
-		offset_ns2 = ns2*num_plane_waves;
+		offset_ns2 = ns2*distr_npw_localsize;
 		for (ns1 = 0; ns1 < num_states; ns1++) {
-			offset_ns1 = ns1*num_plane_waves;
+			offset_ns1 = ns1*distr_npw_localsize;
 
 			overlap[ns2*num_states+ns1] = 0.0+0.0*I;
 
-			for (pw = 0; pw < num_plane_waves; pw++) {
+			for (pw = 0; pw < distr_local_npw; pw++) {
 				overlap[ns2*num_states+ns1] += conj(trial_wvfn[offset_ns1+pw])
 					* trial_wvfn[offset_ns2+pw];
 			}
 		}
 	}
 
+	MPI_Allreduce(overlap, global_overlap, num_states*num_states*2, MPI_DOUBLE,
+			MPI_SUM, MPI_COMM_WORLD);
+
 	// compute cholesky factorisation of overlap matrix
-	err = LAPACKE_zpotrf(LAPACK_COL_MAJOR, 'U', num_states, overlap, num_states);
+	err = LAPACKE_zpotrf(LAPACK_COL_MAJOR, 'U', num_states, global_overlap, num_states);
 	if (err) {
 		mpi_error("zpotrf failed: %d\n", err);
 		exit(EXIT_FAILURE);
 	}
 
 	// invert
-	err = LAPACKE_ztrtri(LAPACK_COL_MAJOR, 'U', 'N', num_states, overlap,
+	err = LAPACKE_ztrtri(LAPACK_COL_MAJOR, 'U', 'N', num_states, global_overlap,
 			num_states);
 	if (err) {
 		mpi_error("ztrtri failed: %d\n", err);
@@ -201,24 +235,25 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 	}
 
 	// Set lower triangle to zero - N.B. column-major
-#pragma omp parallel for default(none) shared(num_states,overlap) private(ns2,ns1)
+//#pragma omp parallel for default(none) shared(num_states,overlap) private(ns2,ns1)
 	for (ns2 = 0; ns2 < num_states; ns2++) {
 
 		for (ns1 = ns2+1; ns1 < num_states; ns1++) {
-			overlap[ns2*num_states+ns1] = (0.0+0.0*I);
+			global_overlap[ns2*num_states+ns1] = (0.0+0.0*I);
 		}
 
 	}
 
 	// apply orthonormalisation to trial wvfn
-	transform(num_plane_waves, num_states, trial_wvfn, overlap);
+	transform(num_plane_waves, num_states, trial_wvfn, global_overlap);
 
 	free(overlap);
+	free(global_overlap);
 }
 
 void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 		fftw_complex *ref_state) {
-	fftw_complex overlap;
+	fftw_complex overlap,global_overlap;
 	int ref_state_offset;
 	int state_offset;
 	int ns1;
@@ -229,7 +264,7 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 	int local_state_offset;
 
 
-#pragma omp parallel for default(none) shared(num_states,num_plane_waves,ref_state,state) private(ns1,ns2,state_offset,ref_state_offset,pw,local_ref_state_offset,local_state_offset,overlap)
+//#pragma omp parallel for default(none) shared(num_states,num_plane_waves,ref_state,state) private(ns1,ns2,state_offset,ref_state_offset,pw,local_ref_state_offset,local_state_offset,overlap)
 	for (ns2=0;ns2<num_states;ns2++) {
 		state_offset = ns2*num_plane_waves;
 		for (ns1=0;ns1<num_states;ns1++) {
@@ -239,7 +274,7 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 
 			// Calculate overlap
 			// Dot. Prod. = SUM_i(cplx_conj(a)_i*b_i)
-			for (pw=0; pw < num_plane_waves; pw++) {
+			for (pw=0; pw < distr_local_npw; pw++) {
 				local_ref_state_offset = ref_state_offset+pw;
 				local_state_offset = state_offset+pw;
 
@@ -247,13 +282,16 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 					* state[local_state_offset];
 
 			}
+
+			MPI_Allreduce(&overlap, &global_overlap, 2, MPI_DOUBLE, MPI_SUM,
+					MPI_COMM_WORLD);
 			
 			// remove overlap from state
-			for (pw=0; pw < num_plane_waves; pw++) {
+			for (pw=0; pw < distr_local_npw; pw++) {
 				local_ref_state_offset = ref_state_offset+pw;
 				local_state_offset = state_offset+pw;
 
-				state[local_state_offset] -= overlap*ref_state[local_ref_state_offset];
+				state[local_state_offset] -= global_overlap*ref_state[local_ref_state_offset];
 			}
 		}
 	}
@@ -270,7 +308,7 @@ void precondition(int num_plane_waves, int num_states,
 	double kinetic_eigenvalue;
 	double x, tmp; 
 
-#pragma omp parallel for default(none) shared(num_states,num_plane_waves,trial_wvfn,H_kinetic,search_direction) private(offset,kinetic_eigenvalue,np,x,tmp)
+//#pragma omp parallel for default(none) shared(num_states,num_plane_waves,trial_wvfn,H_kinetic,search_direction) private(offset,kinetic_eigenvalue,np,x,tmp)
 	for (ns = 0;ns < num_states; ns++) {
 		/* |---------------------------------------------------------------------|
 			 | You need to compute the kinetic energy "eigenvalue" for state ns.   |
@@ -293,22 +331,26 @@ void precondition(int num_plane_waves, int num_states,
 
 		offset = ns*num_plane_waves;
 		kinetic_eigenvalue = 0.0;
+		double global_kinetic_eigenvalue = 0.0;
 
-		for (np = 0; np < num_plane_waves; np++) {
+		for (np = 0; np < distr_local_npw; np++) {
 			kinetic_eigenvalue += H_kinetic[np]
 				* creal(trial_wvfn[offset + np]) * creal(trial_wvfn[offset + np])
 				+ H_kinetic[np] * cimag(trial_wvfn[offset + np])
 				* cimag(trial_wvfn[offset + np]);
 		}
-		
-		for (np = 0; np < num_plane_waves; np++) {
+
+		MPI_Allreduce(&kinetic_eigenvalue, &global_kinetic_eigenvalue, 1,
+				MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+		for (np = 0; np < distr_local_npw; np++) {
 			/* |----------------------------------------------------------------|
 				 | You need to compute and apply the preconditioning, using the   |
 				 | estimate of trial_wvfn's kinetic energy computed above and the |
 				 | kinetic energy associated with each plane-wave basis function  |
 				 |----------------------------------------------------------------| */
 
-			x = H_kinetic[np] / kinetic_eigenvalue;
+			x = H_kinetic[np] / global_kinetic_eigenvalue;
 
 			// apply f(x) - keeping in mind search_direction is complex
 			// f(x) = (8+4x+2x^2+x^3)/(8+4x+2x^2+x^3+x^4)
@@ -339,22 +381,27 @@ void diagonalise(int num_plane_waves,int num_states, fftw_complex *state,
 	int i;
 	int err;
 
+	fftw_complex local_rotation[num_states*num_states];
+
 	// Compute the subspace H matrix and store in rotation array
-#pragma omp parallel for default(none) shared(num_states,num_plane_waves,state,rotation,H_state) private(ns1,ns2,offset_ns1,offset_ns2,i)
+//#pragma omp parallel for default(none) shared(num_states,num_plane_waves,state,local_rotation,H_state) private(ns1,ns2,offset_ns1,offset_ns2,i)
 	for (ns2=0;ns2<num_states;ns2++) {
 		offset_ns2 = ns2*num_plane_waves;
 		for (ns1=0;ns1<num_states;ns1++) {
 			offset_ns1 = ns1*num_plane_waves;
-			rotation[ns2*num_states+ns1] = (0.0+0.0*I);
-			for (i=0;i<num_plane_waves;i++) {
+			local_rotation[ns2*num_states+ns1] = (0.0+0.0*I);
+			for (i=0;i<distr_local_npw;i++) {
 
 				// The complex dot-product a.b is conjg(a)*b
-				rotation[ns2*num_states+ns1] += 
+				local_rotation[ns2*num_states+ns1] += 
 					conj(state[offset_ns1+i])*H_state[offset_ns2+i];
 
 			}
 		}
 	}
+
+	MPI_Allreduce(local_rotation, rotation, 2*num_states*num_states, MPI_DOUBLE,
+			MPI_SUM, MPI_COMM_WORLD);
 
 	// Diagonalise to get eigenvectors and eigenvalues
 	err = LAPACKE_zheev(LAPACK_ROW_MAJOR, 'V', 'U', num_states, rotation,
@@ -383,13 +430,13 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state,
 	for(ns2 = 0; ns2 < num_states; ns2++) {
 		offset_ns2 = ns2*num_plane_waves;
 
-#pragma omp parallel for default(none) \
-	shared(ns2,offset_ns2,new_state,state,transformation,num_plane_waves,num_states) \
-	private(ns1,offset_ns1,pw)
+//#pragma omp parallel for default(none) \
+//	shared(ns2,offset_ns2,new_state,state,transformation,num_plane_waves,num_states) \
+//	private(ns1,offset_ns1,pw)
 		for(ns1 = 0; ns1 < num_states; ns1++) {
 			offset_ns1 = ns1*num_plane_waves;
 
-			for(pw = 0; pw < num_plane_waves; pw++) {
+			for(pw = 0; pw < distr_local_npw; pw++) {
 				new_state[offset_ns1 + pw] += state[offset_ns2 + pw]
 					* transformation[ns1 * num_states + ns2];
 			}
@@ -409,53 +456,111 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state,
 void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		double *H_kinetic, double *H_local, fftw_complex *H_state)
 {
-	fftw_plan plan_forward, plan_backward;
+	fftw_plan plan_forward = NULL, plan_backward = NULL;
 	fftw_complex *tmp_state = NULL, *tmp_state_in = NULL;
 
-	int ns, np;
+	int ns, np, x, y, z;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
-	
-#pragma omp parallel default(none) \
-	shared(num_plane_waves,plan_forward,plan_backward,num_pw_3d,num_states,state,H_state,H_kinetic,H_local) \
-	private(tmp_state,tmp_state_in,ns,np)
+
 { //#startpragma
 
-	tmp_state = calloc(num_pw_3d,sizeof(fftw_complex));
-	tmp_state_in = calloc(num_pw_3d,sizeof(fftw_complex));
+	tmp_state = calloc(distr_npw_localsize,sizeof(fftw_complex));
+	tmp_state_in = calloc(distr_npw_localsize,sizeof(fftw_complex));
 
-#pragma omp single
-	{
-	plan_forward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves,
-			num_plane_waves, tmp_state_in, tmp_state, FFTW_FORWARD, FFTW_ESTIMATE);
-	plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves,
-			num_plane_waves, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
-	}
+	//plan_forward = fftw_plan_dft_3d(
+	//		num_plane_waves,num_plane_waves,num_plane_waves,
+	//		tmp_state_in, tmp_state,
+	//		FFTW_FORWARD, FFTW_ESTIMATE);
+//	plan_forward = fftw_plan_many_dft(
+//			 1, &num_plane_waves, num_plane_waves*num_plane_waves,
+//			 tmp_state_in, &num_plane_waves,
+//			 1, num_plane_waves,
+//			 tmp_state, &num_plane_waves,
+//			 1, num_plane_waves,
+//			 FFTW_FORWARD, FFTW_ESTIMATE
+//			 );
 
-#pragma omp loop
+	plan_forward = fftw_mpi_plan_dft_3d(
+			num_plane_waves,num_plane_waves,num_plane_waves,
+			tmp_state_in, tmp_state, MPI_COMM_WORLD,
+			FFTW_FORWARD, FFTW_ESTIMATE);
+
+	//plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+	//plan_backward = fftw_plan_many_dft(
+	//		 1, &num_plane_waves, num_plane_waves*num_plane_waves,
+	//		 tmp_state_in, &num_plane_waves,
+	//		 1, num_plane_waves,
+	//		 tmp_state, &num_plane_waves,
+	//		 1, num_plane_waves,
+	//		 FFTW_BACKWARD, FFTW_ESTIMATE
+	//		 );
+	
+	plan_backward = fftw_mpi_plan_dft_3d(
+			num_plane_waves,num_plane_waves,num_plane_waves,
+			tmp_state_in, tmp_state, MPI_COMM_WORLD,
+			FFTW_BACKWARD, FFTW_ESTIMATE);
+
 	for(ns = 0; ns < num_states; ns++) {
-		for(np = 0; np < num_pw_3d; np++) {
-			tmp_state_in[np] = state[ns*num_pw_3d+np];
+		for(np = 0; np < distr_local_npw; np++) {
+			tmp_state_in[np] = state[ns*distr_npw_localsize+np];
 		}
 
-		fftw_execute_dft(plan_forward, tmp_state_in, tmp_state);
 
-		for(np = 0; np < num_pw_3d; np++){
-			tmp_state[np] = H_local[np]*tmp_state[np]/num_pw_3d;
+		//fftw_execute_dft(plan_forward, tmp_state_in, tmp_state);
+		//for(z = 0; z < num_plane_waves; z++) {
+		//	for(y = 0; y < num_plane_waves; y++) {
+		//		for(x = 0; x < num_plane_waves; x++) {
+		//			tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x] =
+		//				tmp_state[z*num_plane_waves*num_plane_waves+x*num_plane_waves+y];
+		//		}
+		//	}
+		//}
+		//fftw_execute_dft(plan_forward, tmp_state_in, tmp_state);
+		//for(z = 0; z < num_plane_waves; z++) {
+		//	for(y = 0; y < num_plane_waves; y++) {
+		//		for(x = 0; x < num_plane_waves; x++) {
+		//			tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x] =
+		//				tmp_state[x*num_plane_waves*num_plane_waves+y*num_plane_waves+z];
+		//		}
+		//	}
+		//}
+		fftw_mpi_execute_dft(plan_forward, tmp_state_in, tmp_state);
+
+		for(np = 0; np < distr_local_npw; np++){
+			tmp_state[np] = H_local[np] * tmp_state[np]/num_pw_3d;
 		}
 
-		fftw_execute_dft(plan_backward, tmp_state, &H_state[ns*num_pw_3d]);
+		//fftw_execute_dft(plan_backward, tmp_state, tmp_state_in);
+		//for(z = 0; z < num_plane_waves; z++) {
+		//	for(y = 0; y < num_plane_waves; y++) {
+		//		for(x = 0; x < num_plane_waves; x++) {
+		//			tmp_state[x*num_plane_waves*num_plane_waves+y*num_plane_waves+z] =
+		//				tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x];
+		//		}
+		//	}
+		//}
+		//fftw_execute_dft(plan_backward, tmp_state, tmp_state_in);
+		//for(z = 0; z < num_plane_waves; z++) {
+		//	for(y = 0; y < num_plane_waves; y++) {
+		//		for(x = 0; x < num_plane_waves; x++) {
+		//			tmp_state[z*num_plane_waves*num_plane_waves+x*num_plane_waves+y] =
+		//				tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x];
+		//		}
+		//	}
+		//}
+		fftw_mpi_execute_dft(plan_backward, tmp_state, &H_state[ns*distr_npw_localsize]);
 
-		for(np = 0; np < num_pw_3d; np++) {
-			H_state[ns*num_pw_3d+np] = H_state[ns*num_pw_3d+np] 
-				+ H_kinetic[np]*state[ns*num_pw_3d+np];
+		for(np = 0; np < distr_local_npw; np++) {
+			H_state[ns*distr_npw_localsize+np] = H_state[ns*distr_npw_localsize+np] 
+				+ H_kinetic[np]*state[ns*distr_npw_localsize+np];
+			
 		}
+
 	}
 
-#pragma omp single
-	{
 	fftw_destroy_plan(plan_forward);
 	fftw_destroy_plan(plan_backward);
-	}
 
 	free(tmp_state);
 	free(tmp_state_in);
@@ -514,53 +619,55 @@ void line_search(int num_plane_waves ,int num_states,
 	// To try to keep a convenient step length, we reduce the size of the search
 	// direction
 	mean_norm = 0.0;
-#pragma omp parallel for default(none) private(ns,offset,tmp_sum,np) \
-	shared(num_states,num_pw_3d,direction) reduction(+:mean_norm)
+	tmp_sum = 0.0;
+//#pragma omp parallel for default(none) private(ns,offset,tmp_sum,np) \
+//	shared(num_states,num_pw_3d,direction) reduction(+:mean_norm)
 	for (ns = 0; ns < num_states; ns++) {
-		offset=ns*num_pw_3d;
-		tmp_sum = 0.0;
+		offset=ns*distr_npw_localsize;
 
-		for (np = 0; np < num_pw_3d; np++) {
+		for (np = 0; np < distr_local_npw; np++) {
 			// NOTE apparently taking mean_norm as sum(abs(direction)) converged
 			// faster than the original? Why?
 			//mean_norm += cabs(direction[offset+np]);
 			tmp_sum += pow(cabs(direction[offset+np]),2);
 		}
 
-		tmp_sum    = sqrt(tmp_sum);
-		mean_norm += tmp_sum;
+		//tmp_sum    = sqrt(tmp_sum);
+		//mean_norm += tmp_sum;
 	}
+
+	MPI_Allreduce(&tmp_sum, &mean_norm, 1, MPI_DOUBLE, MPI_SUM,
+			MPI_COMM_WORLD);
 
 	mean_norm     = mean_norm/(double)num_states;
 	inv_mean_norm = 1.0/mean_norm;
 
-#pragma omp parallel for schedule(static,num_pw_3d)
-	for (i = 0; i < num_pw_3d*num_states; i++) {
-		direction[i] = direction[i]*inv_mean_norm;
-	}
-
 	// The rate-of-change of the energy is just 2*Re{direction.gradient}
 	denergy_dstep = 0.0;
 
-#pragma omp parallel for default(none) \
-	private(ns,offset,tmp_sum,np) \
-	shared(num_states,num_pw_3d,direction,gradient) \
-	reduction(+:denergy_dstep)
+//#pragma omp parallel for default(none) \
+//	private(ns,offset,tmp_sum,np) \
+//	shared(num_states,num_pw_3d,direction,gradient) \
+//	reduction(+:denergy_dstep)
+	tmp_sum = 0.0;
 	for ( ns =0; ns < num_states; ns++) {
 
-		offset = num_pw_3d*ns;
-		tmp_sum = 0.0;
+		offset = distr_npw_localsize*ns;
 
-		for (np = 0; np < num_pw_3d; np++) {
+		for (np = 0; np < distr_local_npw; np++) {
 			// The complex dot-product is conjg(trial_wvfn)*gradient
 			// tmp_sum is the real part, so we only compute that
 			tmp_sum += creal(conj(direction[offset+np])*gradient[offset+np]);
 		}
 
-		denergy_dstep += 2.0*tmp_sum;
+		//denergy_dstep += 2.0*tmp_sum;
 	}
 
-	tmp_state = (fftw_complex *)calloc(num_pw_3d*num_states,sizeof(fftw_complex));
+	tmp_sum *= 2;
+	MPI_Allreduce(&tmp_sum, &denergy_dstep, 1, MPI_DOUBLE, MPI_SUM,
+			MPI_COMM_WORLD);
+
+	tmp_state = (fftw_complex *)calloc(distr_npw_localsize*num_states,sizeof(fftw_complex));
 
 	best_step   = 0.0;
 	best_energy = *energy;
@@ -571,13 +678,16 @@ void line_search(int num_plane_waves ,int num_states,
 	// We find a trial step that lowers the energy:
 	for (loop = 0; loop < 10; loop++) {
 
-#pragma omp parallel for schedule(static,num_pw_3d) default(none) private(i) \
-		shared(num_states,num_pw_3d,tmp_state,approx_state,direction,step)
-		for (i = 0; i < num_pw_3d*num_states; i++) {
-			tmp_state[i] = approx_state[i] + step*direction[i];
+//#pragma omp parallel for schedule(static,num_pw_3d) default(none) private(i) \
+//		shared(num_states,num_pw_3d,tmp_state,approx_state,direction,step)
+		for (int k = 0; k < num_states; k++) {
+			for (int j = 0; j < distr_local_npw; j++) {
+				i = k * distr_npw_localsize + j;
+				tmp_state[i] = approx_state[i] + step*direction[i];
+			}
 		}
 
-		orthonormalise(num_pw_3d,num_states,tmp_state);
+		orthonormalise(distr_npw_localsize,num_states,tmp_state);
 
 		// Apply the H to this state
 		apply_hamiltonian(num_plane_waves,num_states,tmp_state,H_kinetic,H_local,
@@ -586,22 +696,25 @@ void line_search(int num_plane_waves ,int num_states,
 		// Compute the new energy estimate
 		tmp_energy = 0.0;
 
-#pragma omp parallel for default(none) \
-		private(ns,offset,tmp_sum,np) \
-		shared(num_states,num_pw_3d,tmp_state,gradient) \
-		reduction(+:tmp_energy)
+//#pragma omp parallel for default(none) \
+//		private(ns,offset,tmp_sum,np) \
+//		shared(num_states,num_pw_3d,tmp_state,gradient) \
+//		reduction(+:tmp_energy)
+			tmp_sum = 0.0;
 		for (ns = 0; ns < num_states; ns++) {
 
-			offset = num_pw_3d*ns;
-			tmp_sum = 0.0;
+			offset = distr_npw_localsize*ns;
 
-			for (np = 0; np < num_pw_3d; np++) {
+			for (np = 0; np < distr_local_npw; np++) {
 				// The complex dot-product a.b is conjg(a)*b
 				// tmp_sum is the real part, so we just compute that
 				tmp_sum += creal(conj(tmp_state[offset+np])*gradient[offset+np]);
 			}
-			tmp_energy += tmp_sum;
+			//tmp_energy += tmp_sum;
 		}
+
+		MPI_Allreduce(&tmp_sum, &tmp_energy, 1, MPI_DOUBLE, MPI_SUM,
+				MPI_COMM_WORLD);
 
 		if (tmp_energy < *energy) {
 			break;
@@ -661,12 +774,12 @@ void line_search(int num_plane_waves ,int num_states,
 	//    de/dx = de + 2*c*x
 
 
-#pragma omp parallel for schedule(static,num_pw_3d)
-	for (i = 0; i < num_pw_3d*num_states; i++) {
+//#pragma omp parallel for schedule(static,num_pw_3d)
+	for (i = 0; i < distr_npw_localsize*num_states; i++) {
 		approx_state[i] += opt_step*direction[i];
 	}
 
-	orthonormalise(num_pw_3d,num_states,approx_state);
+	orthonormalise(distr_npw_localsize,num_states,approx_state);
 
 	// Apply the H to this state
 	apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,H_local,
@@ -675,37 +788,43 @@ void line_search(int num_plane_waves ,int num_states,
 	// Compute the new energy estimate
 	//*energy = 0.0;
 	double loop_energy = 0.0;
-#pragma omp parallel for default(none) \
-	private(ns,offset,tmp_sum,np) \
-	shared(num_states,num_pw_3d,approx_state,gradient,eigenvalue) \
-	reduction(+:loop_energy)
+	double local_eigenvalue[num_states];
+////#pragma omp parallel for default(none) \
+//	private(ns,offset,tmp_sum,np) \
+//	shared(num_states,num_pw_3d,approx_state,gradient,eigenvalue) \
+//	reduction(+:loop_energy)
 	for ( ns = 0; ns < num_states; ns++) {
 
-		offset = num_pw_3d*ns;
+		offset = distr_npw_localsize*ns;
 		tmp_sum = 0.0;
 
-		for (np = 0; np < num_pw_3d; np++) {
+		for (np = 0; np < distr_local_npw; np++) {
 			// The complex dot-product a.b is conjg(a)*b
 			// tmp_sum is just the real part, so we only compute that
 			tmp_sum += creal(conj(approx_state[offset+np])*gradient[offset+np]);
 		}
 
-		eigenvalue[ns] = tmp_sum;
+		local_eigenvalue[ns] = tmp_sum;
 		loop_energy += tmp_sum;
 	}
-	*energy = loop_energy;
+	//*energy = loop_energy;
+	
+	MPI_Allreduce(local_eigenvalue, eigenvalue, num_states, MPI_DOUBLE, MPI_SUM,
+			MPI_COMM_WORLD);
+	MPI_Allreduce(&loop_energy, energy, 1, MPI_DOUBLE, MPI_SUM,
+			MPI_COMM_WORLD);
 
 	// This ought to be the best, but check...
 	if (*energy > best_energy) {
 
 		// Roughly machine epsilon in double precision
 		if (fabs(best_step - epsilon) > 0.0) {
-#pragma omp parallel for schedule(static,num_pw_3d)
-			for (i = 0; i < num_pw_3d*num_states; i++) {
+//#pragma omp parallel for schedule(static,num_pw_3d)
+			for (i = 0; i < distr_local_npw*num_states; i++) {
 				approx_state[i] += best_step*direction[i];
 			}
 
-			orthonormalise(num_pw_3d,num_states,approx_state);
+			orthonormalise(distr_npw_localsize,num_states,approx_state);
 
 			// Apply the H to this state
 			apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,
@@ -714,25 +833,29 @@ void line_search(int num_plane_waves ,int num_states,
 			// Compute the new energy estimate
 			//*energy = 0.0;
 			loop_energy = 0.0;
-#pragma omp parallel for default(none) \
-	private(ns,offset,tmp_sum,np) \
-	shared(num_states,num_pw_3d,approx_state,gradient,eigenvalue) \
-	reduction(+:loop_energy)
+//#pragma omp parallel for default(none) \
+//	private(ns,offset,tmp_sum,np) \
+//	shared(num_states,num_pw_3d,approx_state,gradient,eigenvalue) \
+//	reduction(+:loop_energy)
 			for (ns = 0; ns < num_states; ns++) {
 
-				offset = num_pw_3d*ns;
+				offset = distr_npw_localsize*ns;
 				tmp_sum = 0.0;
-				for (np = 0; np < num_pw_3d; np++) {
+				for (np = 0; np < distr_local_npw; np++) {
 					// The complex dot-product a.b is conjg(a)*b
 					// tmp_sum is just the real part, so we only compute that
 					tmp_sum += creal(conj(approx_state[offset+np])*gradient[offset+np]);
 				}
 
-				eigenvalue[ns] = tmp_sum;
+				local_eigenvalue[ns] = tmp_sum;
 				loop_energy += tmp_sum;
 
 			}
-			*energy = loop_energy;
+			//*energy = loop_energy;
+			MPI_Allreduce(local_eigenvalue, eigenvalue, num_states, MPI_DOUBLE, MPI_SUM,
+					MPI_COMM_WORLD);
+			MPI_Allreduce(&loop_energy, energy, 1, MPI_DOUBLE, MPI_SUM,
+					MPI_COMM_WORLD);
 		}
 		else {
 			mpi_error("Problem with line search: best_step < 0 " "[%f]\n", best_step);
@@ -754,16 +877,18 @@ void calculate_eigenvalues(int num_plane_waves, int num_states,
 	int offset = 0;
 	int ns, pw;
 
-#pragma omp parallel for default(none) shared(eigenvalues,gradient,state,num_states,num_plane_waves) private(ns,offset,pw)
+	double local_eigenvalues[num_states];
+
+//#pragma omp parallel for default(none) shared(eigenvalues,gradient,state,num_states,num_plane_waves) private(ns,offset,pw)
 	for (ns = 0; ns < num_states; ns++) {
 		offset = ns * num_plane_waves;
 
-		eigenvalues[ns] = 0.0;
+		local_eigenvalues[ns] = 0.0;
 
 		for (pw = 0; pw < num_plane_waves; pw++) {
 			// The complex dot-product is conjg(trial_wvfn)*gradient
 			// NB the eigenvalue is the real part of the product, so only compute that
-			eigenvalues[ns] += creal(conj(state[offset + pw])*gradient[offset + pw]);
+			local_eigenvalues[ns] += creal(conj(state[offset + pw])*gradient[offset + pw]);
 
 		}
 
@@ -785,14 +910,14 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 	int CG_RESET=5;
 	double gamma, gTxg=0.0, gTxg_prev=1.0;
 	double previous_energy;
-	double energy_tolerance = 1.e-10;
+	double energy_tolerance = 1.e-7;
 
 	double total_energy = 0.;
 
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	search_direction = calloc(num_pw_3d*num_states, sizeof(fftw_complex));
-	previous_search_direction = calloc(num_pw_3d*num_states,
+	search_direction = calloc(distr_npw_localsize*num_states, sizeof(fftw_complex));
+	previous_search_direction = calloc(distr_npw_localsize*num_states,
 			sizeof(fftw_complex));
 
 	mpi_printf("Starting iterative search @ tolerance of %1.0e\n",
@@ -820,59 +945,62 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 		// -- i.e. it is orthogonal to wvfn which we enforce by 
 		// calling the routine below. Remember H.wvfn is already
 		// stored as gradient. You need to complete this function
-		orthogonalise(num_pw_3d,num_states,gradient,trial_wvfn);
+		orthogonalise(distr_npw_localsize,num_states,gradient,trial_wvfn);
 
 		// The steepest descent search direction is minus the gradient
-#pragma omp parallel for schedule(static,num_pw_3d)
-		for ( i = 0; i < num_pw_3d*num_states; i++) {
+//#pragma omp parallel for schedule(static,num_pw_3d)
+		for ( i = 0; i < distr_npw_localsize*num_states; i++) {
 			// cannot copy into previous_search_direction *here* because
 			// search_direction gets mangled inside the line_search function
 			search_direction[i] = -gradient[i];
 		}
 
 		//* PRECON */
-		precondition(num_pw_3d, num_states, search_direction, trial_wvfn,
+		precondition(distr_npw_localsize, num_states, search_direction, trial_wvfn,
 				H_kinetic);
-		orthogonalise(num_pw_3d, num_states, search_direction, trial_wvfn);
+		orthogonalise(distr_npw_localsize, num_states, search_direction, trial_wvfn);
 
 		//Always calculate gT*g even on reset iteration - will need as gTxg_prev in
 		//next iteration
 		gTxg = 0.0;
 
-#pragma omp parallel for default(none) private(ns,offset,i) \
-		shared(num_states,num_pw_3d,search_direction,gradient) \
-		reduction(+:gTxg)
+		double local_gTxg = 0.0;
+//#pragma omp parallel for default(none) private(ns,offset,i) \
+//		shared(num_states,num_pw_3d,search_direction,gradient) \
+//		reduction(+:gTxg)
 		for(ns = 0; ns < num_states; ns++) {
-			offset = ns*num_pw_3d;
-			for(i=0; i < num_pw_3d; i++) {
-				gTxg += creal(conj(search_direction[offset+i])*gradient[offset+i]);
+			offset = ns*distr_npw_localsize;
+			for(i=0; i < distr_local_npw; i++) {
+				local_gTxg += creal(conj(search_direction[offset+i])*gradient[offset+i]);
 			}
 		}
+
+		MPI_Allreduce(&local_gTxg, &gTxg, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
 		if (reset_sd != 0) {
 			gamma = gTxg / gTxg_prev;
 
-#pragma omp parallel for default(none) \
-			private(ns, offset, i) \
-			shared(num_states,num_pw_3d,gamma,search_direction,previous_search_direction)
+//#pragma omp parallel for default(none) \
+//			private(ns, offset, i) \
+//			shared(num_states,num_pw_3d,gamma,search_direction,previous_search_direction)
 			for (ns = 0; ns < num_states; ns++) {
-				offset = ns*num_pw_3d;
+				offset = ns*distr_npw_localsize;
 
-				for (i = 0;i < num_pw_3d; i++) {
+				for (i = 0;i < distr_local_npw; i++) {
 					search_direction[offset+i] += gamma
 						* previous_search_direction[offset+i];
 				}
 
 			}
 
-			orthogonalise(num_pw_3d,num_states,search_direction,trial_wvfn);
+			orthogonalise(distr_npw_localsize,num_states,search_direction,trial_wvfn);
 		}
 
 		gTxg_prev = gTxg;
 
 		// Remember search direction
-#pragma omp parallel for schedule(static,num_pw_3d)
-		for( i = 0; i < num_pw_3d*num_states; i++) {
+//#pragma omp parallel for schedule(static,num_pw_3d)
+		for( i = 0; i < distr_npw_localsize*num_states; i++) {
 			previous_search_direction[i] = search_direction[i];
 		}
 

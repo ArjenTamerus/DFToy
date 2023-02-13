@@ -28,10 +28,10 @@ struct option tc_params[] = {
 
 void set_default_configuration_params(struct toycode_params *params)
 {
-	params->num_wave_vectors = 3;
-	params->num_states = 1;
+	params->num_wave_vectors = 12;
+	params->num_states = 4;
 
-	params->run_exact_solver = true;
+	params->run_exact_solver = false;
 	params->run_iterative_solver = true;
 	params->keep_exact_solution = false;
 

@@ -1,10 +1,10 @@
 # Lines for GNU
-OMPI_CC=gcc
+export I_MPI_CC=icx
 CC=mpicc
 CPP=cpp
-CFLAGS=-std=c99 -g -O3 -Wall -Wpedantic -D_POSIX_C_SOURCE=200809L
+CFLAGS=-g -std=c99 -O3 -D_POSIX_C_SOURCE=200809L -fiopenmp -qmkl=parallel
 
-LAPACK_LIBS=-llapacke
+LAPACK_LIBS=-mkl
 LAPACK_LDFLAGS=
 
 ifdef WITH_ELPA
@@ -21,10 +21,10 @@ ifdef WITH_SCALAPACK
 endif
 
 
-CPPFLAGS=-I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
+CPPFLAGS=-I/home/at748/.libs/fftw-3.3.10/include -I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
 				 $(ELPA_CPPFLAGS)
-LDFLAGS=$(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS)
-LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3 -lm
+LDFLAGS=-L/home/at748/.libs/fftw-3.3.10/lib $(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS) -fiopenmp
+LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3_mpi -lfftw3 -qmkl=parallel -lm -L${MKLROOT}/lib/intel64 -liomp5 -lpthread -lm -ldl
 
 TARGET=dftoy
 

@@ -4,12 +4,15 @@
 #include <stdbool.h>
 #include <complex.h>
 #include <mpi.h>
+#include <omp.h>
 #include <fftw3.h>
 
 extern int world_size, world_rank;
 extern int blacs_ctxt, blacs_ctxt_root;
 extern int nprow, npcol, myprow, mypcol;
 extern bool par_root;
+
+extern int num_omp_threads;
 
 // Prototypes for netlib routines
 
@@ -36,4 +39,6 @@ void mpi_fail(const char *format, ...);
 
 void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9], 
 		fftw_complex *matrix, fftw_complex **A, fftw_complex **Z);
+
+void omp_init();
 #endif

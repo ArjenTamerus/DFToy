@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <complex.h>
-#include <fftw3.h>
+#include <fftw3-mpi.h>
 #include "parallel.h"
 #include "trace.h"
 
@@ -19,12 +19,16 @@ int blacs_ctxt, blacs_ctxt_root;
 int nprow, npcol, myprow, mypcol;
 bool par_root = false;
 
+int num_omp_threads = 1;
+
 // Initialise MPI and BLACS
 void init_parallel(int argc, char **argv)
 {
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+
+	fftw_mpi_init();
 
 	if(!world_rank) {
 		par_root = true;
@@ -45,10 +49,13 @@ void init_parallel(int argc, char **argv)
 	Cblacs_gridinit(&blacs_ctxt_root, &cbgi_r, 1, 1);
 	Cblacs_gridinfo(blacs_ctxt, &nprow, &npcol, &myprow, &mypcol);
 #endif
+
+	omp_init();
 }
 
 void finalise_parallel()
 {
+	fftw_mpi_cleanup();
 	MPI_Finalize();
 }
 
@@ -139,4 +146,9 @@ void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9],
 	// distribute full matrix (from root) to local submatrices
 	pzgemr2d_(&num_plane_waves, &num_plane_waves, matrix, &one, &one, desc_root, *A, &one, &one, desc, &blacs_ctxt);
 #endif
+}
+
+void omp_init()
+{
+	num_omp_threads = omp_get_num_threads();
 }
