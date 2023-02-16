@@ -820,7 +820,7 @@ void line_search(int num_plane_waves ,int num_states,
 		// Roughly machine epsilon in double precision
 		if (fabs(best_step - epsilon) > 0.0) {
 //#pragma omp parallel for schedule(static,num_pw_3d)
-			for (i = 0; i < distr_local_npw*num_states; i++) {
+			for (i = 0; i < distr_npw_localsize*num_states; i++) {
 				approx_state[i] += best_step*direction[i];
 			}
 
