@@ -14,7 +14,8 @@
 #include "interfaces.h"
 #include "trace.h"
 
-static ptrdiff_t distr_npw_localsize, distr_local_npw, distr_local_start, distr_local_n0;
+static ptrdiff_t distr_npw_localsize, distr_local_npw, distr_local_start,
+								 distr_local_n0, distr_max_n0;
 
 
 
@@ -32,9 +33,17 @@ void iterative_solver(int num_plane_waves, int num_states, double *global_H_kine
 
 	num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	distr_npw_localsize = fftw_mpi_local_size_3d(num_plane_waves,
+	// For now, set allocation size to be the same on each process.
+	// Less thinking/logic in the manual transpose
+	ptrdiff_t tmp_distr_npw_localsize = fftw_mpi_local_size_3d(num_plane_waves,
 			num_plane_waves, num_plane_waves, MPI_COMM_WORLD, &distr_local_n0,
 			&distr_local_start);
+
+	MPI_Allreduce(&tmp_distr_npw_localsize, &distr_npw_localsize, 1, MPI_UINT64_T,
+			MPI_MAX, MPI_COMM_WORLD);
+
+	MPI_Allreduce(&distr_local_n0, &distr_max_n0, 1, MPI_UINT64_T,
+			MPI_MAX, MPI_COMM_WORLD);
 
 	distr_local_npw = distr_local_n0 * num_plane_waves * num_plane_waves;
 
@@ -456,100 +465,107 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state,
 void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		double *H_kinetic, double *H_local, fftw_complex *H_state)
 {
-	fftw_plan plan_forward = NULL, plan_backward = NULL;
+	fftw_plan plan_forward_1d = NULL, plan_backward_1d = NULL;
+	fftw_plan plan_forward_2d = NULL, plan_backward_2d = NULL;
+	fftw_plan plan_forward_3d = NULL, plan_backward_3d = NULL;
 	fftw_complex *tmp_state = NULL, *tmp_state_in = NULL;
 
 	int ns, np, x, y, z;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
+	int n[] = {num_plane_waves, num_plane_waves};
 { //#startpragma
 
-	tmp_state = calloc(distr_npw_localsize,sizeof(fftw_complex));
-	tmp_state_in = calloc(distr_npw_localsize,sizeof(fftw_complex));
-
-	//plan_forward = fftw_plan_dft_3d(
-	//		num_plane_waves,num_plane_waves,num_plane_waves,
+	// TODO use plan_many instead of looping over dims
+	//plan_forward_1d = fftw_plan_dft_1d(
+	//		num_plane_waves,
 	//		tmp_state_in, tmp_state,
 	//		FFTW_FORWARD, FFTW_ESTIMATE);
-//	plan_forward = fftw_plan_many_dft(
-//			 1, &num_plane_waves, num_plane_waves*num_plane_waves,
-//			 tmp_state_in, &num_plane_waves,
-//			 1, num_plane_waves,
-//			 tmp_state, &num_plane_waves,
-//			 1, num_plane_waves,
-//			 FFTW_FORWARD, FFTW_ESTIMATE
-//			 );
 
-	plan_forward = fftw_mpi_plan_dft_3d(
-			num_plane_waves,num_plane_waves,num_plane_waves,
-			tmp_state_in, tmp_state, MPI_COMM_WORLD,
-			FFTW_FORWARD, FFTW_ESTIMATE);
+	plan_forward_1d = fftw_plan_many_dft(
+			 1, &num_plane_waves, distr_local_n0*num_plane_waves,
+			 tmp_state_in, &num_plane_waves,
+			 1, num_plane_waves,
+			 tmp_state, &num_plane_waves,
+			 1, num_plane_waves,
+			 FFTW_FORWARD, FFTW_ESTIMATE
+			 );
 
-	//plan_backward = fftw_plan_dft_3d(num_plane_waves, num_plane_waves, num_plane_waves, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
+	plan_forward_2d = fftw_plan_many_dft(
+			 2, n, distr_local_n0,
+			 tmp_state_in, n,
+			 1, num_plane_waves*num_plane_waves,
+			 tmp_state, n,
+			 1, num_plane_waves*num_plane_waves,
+			 FFTW_BACKWARD, FFTW_ESTIMATE
+			 );
 
-	//plan_backward = fftw_plan_many_dft(
-	//		 1, &num_plane_waves, num_plane_waves*num_plane_waves,
-	//		 tmp_state_in, &num_plane_waves,
-	//		 1, num_plane_waves,
-	//		 tmp_state, &num_plane_waves,
-	//		 1, num_plane_waves,
-	//		 FFTW_BACKWARD, FFTW_ESTIMATE
-	//		 );
+	//plan_forward = fftw_mpi_plan_dft_3d(
+	//		num_plane_waves,num_plane_waves,num_plane_waves,
+	//		tmp_state_in, tmp_state, MPI_COMM_WORLD,
+	//		FFTW_FORWARD, FFTW_ESTIMATE);
+
+	//plan_backward_1d = fftw_plan_dft_1d(num_plane_waves, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
+	//plan_backward_2d = fftw_plan_dft_2d(num_plane_waves, num_plane_waves, tmp_state_in, tmp_state, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+	plan_backward_1d = fftw_plan_many_dft(
+			 1, &num_plane_waves, distr_local_n0*num_plane_waves,
+			 tmp_state_in, &num_plane_waves,
+			 1, num_plane_waves,
+			 tmp_state, &num_plane_waves,
+			 1, num_plane_waves,
+			 FFTW_BACKWARD, FFTW_ESTIMATE
+			 );
+
+	plan_backward_2d = fftw_plan_many_dft(
+			 2, n, distr_local_n0,
+			 tmp_state_in, n,
+			 1, num_plane_waves*num_plane_waves,
+			 tmp_state, n,
+			 1, num_plane_waves*num_plane_waves,
+			 FFTW_BACKWARD, FFTW_ESTIMATE
+			 );
 	
-	plan_backward = fftw_mpi_plan_dft_3d(
-			num_plane_waves,num_plane_waves,num_plane_waves,
-			tmp_state_in, tmp_state, MPI_COMM_WORLD,
-			FFTW_BACKWARD, FFTW_ESTIMATE);
+	//plan_backward = fftw_mpi_plan_dft_3d(
+	//		num_plane_waves,num_plane_waves,num_plane_waves,
+	//		tmp_state_in, tmp_state, MPI_COMM_WORLD,
+	//		FFTW_BACKWARD, FFTW_ESTIMATE);
 
+//#pragma omp parallel default(none) shared(num_states, distr_local_npw, \
+//		plan_forward_1d, plan_forward_2d, plan_backward_1d, plan_backward_2d, \
+//		plan_forward_3d, plan_backward_3d, \
+//		state, H_state, num_pw_3d, num_plane_waves, \
+//		distr_npw_localsize, H_kinetic, H_local) \
+//		private(ns, np, x, y, z)
+//	{
+//#pragma omp single
+//	{
+//#pragma omp taskloop
 	for(ns = 0; ns < num_states; ns++) {
+		fftw_complex *tmp_state = calloc(distr_npw_localsize,sizeof(fftw_complex));
+		fftw_complex *tmp_state_in = calloc(distr_npw_localsize,sizeof(fftw_complex));
+
 		for(np = 0; np < distr_local_npw; np++) {
 			tmp_state_in[np] = state[ns*distr_npw_localsize+np];
 		}
 
-
-		//fftw_execute_dft(plan_forward, tmp_state_in, tmp_state);
-		//for(z = 0; z < num_plane_waves; z++) {
-		//	for(y = 0; y < num_plane_waves; y++) {
-		//		for(x = 0; x < num_plane_waves; x++) {
-		//			tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x] =
-		//				tmp_state[z*num_plane_waves*num_plane_waves+x*num_plane_waves+y];
-		//		}
-		//	}
-		//}
-		//fftw_execute_dft(plan_forward, tmp_state_in, tmp_state);
-		//for(z = 0; z < num_plane_waves; z++) {
-		//	for(y = 0; y < num_plane_waves; y++) {
-		//		for(x = 0; x < num_plane_waves; x++) {
-		//			tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x] =
-		//				tmp_state[x*num_plane_waves*num_plane_waves+y*num_plane_waves+z];
-		//		}
-		//	}
-		//}
-		fftw_mpi_execute_dft(plan_forward, tmp_state_in, tmp_state);
+		fftw_execute_dft(plan_forward_2d, tmp_state_in, tmp_state);
+		//printf("[DBG][%d] %ld %ld %ld \n", world_rank, distr_local_start,distr_max_n0,
+		//		distr_npw_localsize);
+		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
+				distr_max_n0, num_plane_waves, XZ);
+		fftw_execute_dft(plan_forward_1d, tmp_state_in, tmp_state);
+//#pragma omp taskyield
 
 		for(np = 0; np < distr_local_npw; np++){
-			tmp_state[np] = H_local[np] * tmp_state[np]/num_pw_3d;
+			tmp_state_in[np] = H_local[np] * tmp_state[np]/num_pw_3d;
 		}
 
-		//fftw_execute_dft(plan_backward, tmp_state, tmp_state_in);
-		//for(z = 0; z < num_plane_waves; z++) {
-		//	for(y = 0; y < num_plane_waves; y++) {
-		//		for(x = 0; x < num_plane_waves; x++) {
-		//			tmp_state[x*num_plane_waves*num_plane_waves+y*num_plane_waves+z] =
-		//				tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x];
-		//		}
-		//	}
-		//}
-		//fftw_execute_dft(plan_backward, tmp_state, tmp_state_in);
-		//for(z = 0; z < num_plane_waves; z++) {
-		//	for(y = 0; y < num_plane_waves; y++) {
-		//		for(x = 0; x < num_plane_waves; x++) {
-		//			tmp_state[z*num_plane_waves*num_plane_waves+x*num_plane_waves+y] =
-		//				tmp_state_in[z*num_plane_waves*num_plane_waves+y*num_plane_waves+x];
-		//		}
-		//	}
-		//}
-		fftw_mpi_execute_dft(plan_backward, tmp_state, &H_state[ns*distr_npw_localsize]);
+		fftw_execute_dft(plan_backward_1d, tmp_state_in, tmp_state);
+		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
+				distr_max_n0, num_plane_waves, XZ);
+		fftw_execute_dft(plan_backward_2d, tmp_state_in, &H_state[ns*distr_npw_localsize]);
+//#pragma omp taskyield
 
 		for(np = 0; np < distr_local_npw; np++) {
 			H_state[ns*distr_npw_localsize+np] = H_state[ns*distr_npw_localsize+np] 
@@ -557,13 +573,14 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 			
 		}
 
+		free(tmp_state);
+		free(tmp_state_in);
 	}
 
-	fftw_destroy_plan(plan_forward);
-	fftw_destroy_plan(plan_backward);
-
-	free(tmp_state);
-	free(tmp_state_in);
+	fftw_destroy_plan(plan_forward_1d);
+	fftw_destroy_plan(plan_forward_2d);
+	fftw_destroy_plan(plan_backward_1d);
+	fftw_destroy_plan(plan_backward_2d);
 
 } //#endpragma
 

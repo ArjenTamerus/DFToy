@@ -7,6 +7,10 @@
 #include <omp.h>
 #include <fftw3.h>
 
+#define XZ 0
+#define XY 1
+#define YZ 1
+
 extern int world_size, world_rank;
 extern int blacs_ctxt, blacs_ctxt_root;
 extern int nprow, npcol, myprow, mypcol;
@@ -39,6 +43,10 @@ void mpi_fail(const char *format, ...);
 
 void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9], 
 		fftw_complex *matrix, fftw_complex **A, fftw_complex **Z);
+
+void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
+		ptrdiff_t local_start, ptrdiff_t local_count, ptrdiff_t num_plane_waves,
+		int direction);
 
 void omp_init();
 #endif

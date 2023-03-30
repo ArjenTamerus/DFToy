@@ -148,6 +148,70 @@ void distribute_matrix_for_diagonaliser(int num_plane_waves, int desc[9],
 #endif
 }
 
+void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
+		ptrdiff_t local_start, ptrdiff_t local_z, ptrdiff_t num_plane_waves,
+		int direction)
+{
+	size_t x, y, z;
+	size_t nb, count;
+	int rank;
+	int xdim_nblocks = world_size;
+	ptrdiff_t xdim_block = local_z;
+	ptrdiff_t ydim = num_plane_waves;
+
+
+	fftw_complex *send, *recv;
+
+	if (direction == XZ) {
+		send = calloc(local_z*ydim*(xdim_nblocks*xdim_block), sizeof(fftw_complex));
+		recv = calloc(local_z*ydim*(xdim_nblocks*xdim_block), sizeof(fftw_complex));
+
+		count = 0;
+/////#pragma omp taskyield
+		for(nb = 0; nb < xdim_nblocks; nb++) {
+			for(z = 0; z < local_z; z++) {
+				for(y = 0; y < ydim; y++) {
+					for(x = 0; x < xdim_block; x++) {
+						if((nb*xdim_block+x >= num_plane_waves)) {
+							send[count] = 0;
+							count++;
+						}
+						else {
+							send[count] = in[nb*xdim_block+z*ydim*ydim
+								+ y*ydim + x];
+							count++;
+						}
+					}
+				}
+			}
+		}
+
+		MPI_Alltoall(send, local_z*ydim*xdim_block*2, MPI_DOUBLE,
+				recv, local_z*ydim*xdim_block*2, MPI_DOUBLE, MPI_COMM_WORLD);
+
+		count = 0;
+		for(nb = 0; nb < xdim_nblocks; nb++) {
+			for(z = 0; z < local_z; z++) {
+				for(y = 0; y < ydim; y++) {
+					for(x = 0; x < xdim_block; x++) {
+						if((nb*xdim_block+z >= num_plane_waves)) {
+							count++;
+						}
+						else {
+							 out[nb*xdim_block+x*ydim*ydim+y*ydim+z] = recv[count];
+							 count++;
+						}
+					}
+				}
+			}
+		}
+
+	}
+	else {
+		mpi_error("Invalid transpose direction.\n!");
+	}
+}
+
 void omp_init()
 {
 	num_omp_threads = omp_get_num_threads();

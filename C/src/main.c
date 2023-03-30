@@ -66,8 +66,7 @@ int main(int argc, char **argv)
 
 	finalise_parallel();
 
-	//mpi_printf("Done.\n");
-	fprintf(stderr,"Done@%d.\n",world_rank);
+	mpi_printf("Done.\n");
 	
 	return 0;
 }
