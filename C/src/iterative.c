@@ -911,6 +911,9 @@ void calculate_eigenvalues(int num_plane_waves, int num_states,
 
 	}
 
+	MPI_Allreduce(local_eigenvalues, eigenvalues, ns, MPI_DOUBLE, MPI_SUM,
+			MPI_COMM_WORLD);
+
 }
 
 void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
