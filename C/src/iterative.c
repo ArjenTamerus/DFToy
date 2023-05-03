@@ -120,6 +120,12 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 
 	fftw_complex *tmp_state = calloc(num_pw_3d*num_states,sizeof(fftw_complex));
 
+	// [TODO FIX] Current implementation: calculate the entire state on each MPI
+	// process, then slice out our local state and discard the global state. This
+	// is stupidly inefficient, but will do until (if) I figure out how to safely
+	// pseudo-randomise the state based on a seed, in parallel.
+
+
 // Parallelising this messes with the order of rand() -> let's keep it serial,
 // yeah?
 //#pragma omp parallel for default(none) shared(num_states,num_plane_waves,num_pw_2d,num_pw_3d,state) private(ns,z,y,x,rnd1,rnd2,rand_val,pos,offset,offset_ns)
@@ -162,6 +168,8 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 
 	}
 
+
+	// Copy our local portion of the global state before discarding global
 	for(ns = 0; ns < num_states; ns++) {
 		for(z = 0; z < distr_local_n0; z++) {
 			for(y = 0; y < num_plane_waves; y++) {
@@ -244,6 +252,7 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 	}
 
 	// Set lower triangle to zero - N.B. column-major
+// (usually) tiny, no point in parallelising.
 //#pragma omp parallel for default(none) shared(num_states,overlap) private(ns2,ns1)
 	for (ns2 = 0; ns2 < num_states; ns2++) {
 
@@ -1045,6 +1054,9 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 				previous_energy-total_energy); 
 
 	}
+
+	free(previous_search_direction);
+	free(search_direction);
 }
 
 bool check_convergence(double previous_energy, double total_energy,

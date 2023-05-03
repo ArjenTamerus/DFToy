@@ -206,6 +206,8 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 			}
 		}
 
+		free(send);
+		free(recv);
 	}
 	else {
 		mpi_error("Invalid transpose direction.\n!");
