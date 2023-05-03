@@ -160,6 +160,14 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 	ptrdiff_t ydim = num_plane_waves;
 
 
+	// NOTE: These are not _necessary_ - can reuse in and out if they're allocated
+	// to the appropriate size. To keep the code more readable though, this should
+	// only be done if profiling demonstrates an *actual* speed-up or memory
+	// savings.
+	//
+	// Very rough estimate from watching _htop_ says - maybe 5% memory savings at
+	// -s 24 -w 24? No noticable speed diff.
+	// Would have to test for larger inputs, and run some profiles.
 	fftw_complex *send, *recv;
 
 	if (direction == XZ) {
@@ -167,7 +175,6 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 		recv = calloc(local_z*ydim*(xdim_nblocks*xdim_block), sizeof(fftw_complex));
 
 		count = 0;
-/////#pragma omp taskyield
 		for(nb = 0; nb < xdim_nblocks; nb++) {
 			for(z = 0; z < local_z; z++) {
 				for(y = 0; y < ydim; y++) {
