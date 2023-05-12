@@ -159,6 +159,8 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 	ptrdiff_t xdim_block = local_z;
 	ptrdiff_t ydim = num_plane_waves;
 
+	static MPI_Request transpose_req = MPI_REQUEST_NULL;
+
 
 	// NOTE: These are not _necessary_ - can reuse in and out if they're allocated
 	// to the appropriate size. To keep the code more readable though, this should
@@ -168,11 +170,18 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 	// Very rough estimate from watching _htop_ says - maybe 5% memory savings at
 	// -s 24 -w 24? No noticable speed diff.
 	// Would have to test for larger inputs, and run some profiles.
-	fftw_complex *send, *recv;
+	static fftw_complex *send = NULL, *recv = NULL;
 
 	if (direction == XZ) {
-		send = calloc(local_z*ydim*(xdim_nblocks*xdim_block), sizeof(fftw_complex));
-		recv = calloc(local_z*ydim*(xdim_nblocks*xdim_block), sizeof(fftw_complex));
+
+		if (transpose_req == MPI_REQUEST_NULL) {
+			mpi_printf("Initialising AlltoAll\n");
+			send = calloc(local_z*ydim*(xdim_nblocks*xdim_block), sizeof(fftw_complex));
+			recv = calloc(local_z*ydim*(xdim_nblocks*xdim_block), sizeof(fftw_complex));
+			MPI_Alltoall_init(send, local_z*ydim*xdim_block*2, MPI_DOUBLE,
+				recv, local_z*ydim*xdim_block*2, MPI_DOUBLE, MPI_COMM_WORLD,
+				MPI_INFO_NULL, &transpose_req);
+		}
 
 		count = 0;
 		for(nb = 0; nb < xdim_nblocks; nb++) {
@@ -193,8 +202,8 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 			}
 		}
 
-		MPI_Alltoall(send, local_z*ydim*xdim_block*2, MPI_DOUBLE,
-				recv, local_z*ydim*xdim_block*2, MPI_DOUBLE, MPI_COMM_WORLD);
+		MPI_Start(&transpose_req);
+		MPI_Wait(&transpose_req, MPI_STATUS_IGNORE);
 
 		count = 0;
 		for(nb = 0; nb < xdim_nblocks; nb++) {
@@ -213,8 +222,8 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 			}
 		}
 
-		free(send);
-		free(recv);
+		//free(send);
+		//free(recv);
 	}
 	else {
 		mpi_error("Invalid transpose direction.\n!");
