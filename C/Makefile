@@ -1,8 +1,8 @@
-# Lines for GNU
+# Setup for Intel oneAPI Toolkit + fftw
 export I_MPI_CC=icx
 CC=mpicc
 CPP=cpp
-CFLAGS=-g -std=c99 -O3 -D_POSIX_C_SOURCE=200809L -fiopenmp -qmkl=parallel
+CFLAGS=-xHost -g -std=c99 -O3 -D_POSIX_C_SOURCE=200809L -qmkl=parallel -fiopenmp
 
 LAPACK_LIBS=-mkl
 LAPACK_LDFLAGS=
@@ -21,10 +21,10 @@ ifdef WITH_SCALAPACK
 endif
 
 
-CPPFLAGS=-I/home/at748/.libs/fftw-3.3.10/include -I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
+CPPFLAGS=-I$(FFTW_ROOT)/include -I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
 				 $(ELPA_CPPFLAGS)
-LDFLAGS=-L/home/at748/.libs/fftw-3.3.10/lib $(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS) -fiopenmp
-LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3_mpi -lfftw3 -qmkl=parallel -lm -L${MKLROOT}/lib/intel64 -liomp5 -lpthread -lm -ldl
+LDFLAGS=-L$(FFTW_ROOT)/lib $(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS) -fiopenmp
+LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3_mpi -lfftw3 -qmkl=parallel -lm -L${MKLROOT}/lib/intel64 -lpthread -lm -ldl
 
 TARGET=dftoy
 
