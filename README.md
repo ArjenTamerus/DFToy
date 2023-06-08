@@ -15,8 +15,6 @@ system, representative of a simple DFT calculation.
 
 # Building
 
-`cd` into either the C or Fortran folder.
-
 Update the `Makefile` to suit your compiler/MPI/library paths and flags and run
 `make`.
 
