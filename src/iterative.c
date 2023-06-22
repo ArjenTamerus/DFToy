@@ -9,6 +9,7 @@
 #include <complex.h>
 #include <math.h>
 #include <fftw3-mpi.h>
+#include <cblas.h>
 #include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
@@ -20,7 +21,7 @@ static ptrdiff_t distr_npw_localsize, distr_local_npw, distr_local_start,
 
 
 void iterative_solver(int num_plane_waves, int num_states, double *global_H_kinetic,
-		double *global_H_local, fftw_complex *exact_state)
+		double *global_H_local, double *nl_base_state, fftw_complex *exact_state)
 {
 	fftw_complex *trial_wvfn,
 							 *gradient,
@@ -81,14 +82,14 @@ void iterative_solver(int num_plane_waves, int num_states, double *global_H_kine
 	orthonormalise(distr_npw_localsize, num_states, trial_wvfn);
 
 	apply_hamiltonian(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
-			gradient);
+			nl_base_state, gradient);
 
 	calculate_eigenvalues(distr_npw_localsize, num_states, trial_wvfn, gradient,
 			eigenvalues);
 
 	//// Iterate to find true eigenstates
-	iterative_search(num_plane_waves, num_states, H_kinetic, H_local, trial_wvfn,
-			gradient, rotation, eigenvalues);
+	iterative_search(num_plane_waves, num_states, H_kinetic, H_local,
+			nl_base_state, trial_wvfn, gradient, rotation, eigenvalues);
 
 	// Rotate states to approach true eigenstates
 	diagonalise(distr_npw_localsize,num_states,trial_wvfn,gradient,eigenvalues,rotation);
@@ -99,6 +100,11 @@ void iterative_solver(int num_plane_waves, int num_states, double *global_H_kine
 
 	report_timer(&iterative_timer);
 	destroy_timer(&iterative_timer);
+
+	free(trial_wvfn);
+	free(gradient);
+	free(rotation);
+	free(eigenvalues);
 
 }
 
@@ -218,9 +224,9 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 	global_overlap = calloc(num_states*num_states, sizeof(fftw_complex));
 
 	// overlap matrix
-#pragma omp parallel for default(none) shared(num_states,distr_npw_localsize, \
-		distr_local_npw,overlap,trial_wvfn) \
-	private(ns1,ns2,offset_ns1,offset_ns2,pw)
+//#pragma omp parallel for default(none) shared(num_states,distr_npw_localsize, \
+//		distr_local_npw,overlap,trial_wvfn) \
+//	private(ns1,ns2,offset_ns1,offset_ns2,pw)
 	for (ns2 = 0; ns2 < num_states; ns2++) {
 		offset_ns2 = ns2*distr_npw_localsize;
 		for (ns1 = 0; ns1 < num_states; ns1++) {
@@ -228,6 +234,9 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 
 			overlap[ns2*num_states+ns1] = 0.0+0.0*I;
 
+#pragma novector // Intel icx 2023.1 miscompiles this loop and throws around
+								 // NaNs and Infinities for e.g. -w 5 -s 1 with -O2+ and AVX2.
+								 // TODO Fix? Report? Ignore?
 			for (pw = 0; pw < distr_local_npw; pw++) {
 				overlap[ns2*num_states+ns1] += conj(trial_wvfn[offset_ns1+pw])
 					* trial_wvfn[offset_ns2+pw];
@@ -473,8 +482,14 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state,
 	free(new_state);
 }
 
+
+void calc_beta_phi(double *beta, fftw_complex *state, fftw_complex *beta_phi,
+		int num_states, int num_plane_waves) {
+}
+
 void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
-		double *H_kinetic, double *H_local, fftw_complex *H_state)
+		double *H_kinetic, double *H_local, double *nl_base_state,
+		fftw_complex *H_state)
 {
 	fftw_plan plan_forward_1d = NULL, plan_backward_1d = NULL;
 	fftw_plan plan_forward_2d = NULL, plan_backward_2d = NULL;
@@ -486,6 +501,23 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 
 	int n[] = {num_plane_waves, num_plane_waves};
 
+	/* V_nl stuff */
+	int num_nl_states = num_states;
+	int d_m = num_nl_states;
+	int d_n = num_nl_states;
+
+	double *beta = NULL;
+	double *nl_d = NULL;
+	double *d_beta = NULL;
+	fftw_complex *beta_phi = NULL;
+
+	nl_d = calloc(d_m*d_n,sizeof(double));
+	beta = calloc(num_pw_3d*d_m, sizeof(double));
+	beta_phi = calloc(num_pw_3d*d_m,sizeof(fftw_complex));
+	d_beta = calloc(d_m*d_m, sizeof(fftw_complex));
+
+
+	/* end V_nl stuff */
 
 	plan_forward_1d = fftw_plan_many_dft(
 			 1, &num_plane_waves, distr_local_n0*num_plane_waves,
@@ -526,7 +558,89 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 	tmp_state = calloc(distr_npw_localsize,sizeof(fftw_complex));
 	tmp_state_in = calloc(distr_npw_localsize,sizeof(fftw_complex));
 	
+	//
+	// V_nl - Calculate Beta [plane waves * m] from base state (e^-r)
+	// by applying a different spherical harmonic for each m.
+	//
+	// This is not at all correct for the final implementation, but it gives us
+	// some numbers to work with.
+	//
+
+	// Just apply successive Ylm with nonsense scale factor for each Vnl state.
+	// If (num states) > (3), keep using l=2, m=0. Will be updated once I
+	// understand this better...
+	int l = 0; int m = 0;
+	for (int n = 0; n < num_nl_states; n++) {
+		switch(n) {
+			case 0:
+				l = 0; m = 0;
+				break;
+			case 1:
+				l = 1; m = -1;
+				break;
+			case 2:
+				l = 1; m = 0;
+				break;
+			case 3:
+				l = 1, m = 1;
+				break;
+			default:
+				l = 2, m = 0;
+				break;
+		}
+
+		// Need to decide on _some_ number for the scale factor...
+		double scale = (n+1.0) / num_nl_states;
+		beta_apply_ylm(n, l, m, scale, num_plane_waves, nl_base_state, beta);
+	}
+
+	// Fill up D matrix with nonsense numbers. Just need it to have the right
+	// properties for now (real, symmetric, dominant(?))
+	for (int n = 0; n < d_n; n++) {
+		for (int m = 0; m <= n; m++) {
+			nl_d[n*d_n+m] = (0.1*(double)(m+1)/(n+1))/d_n;
+			nl_d[m*d_m+n] = (0.1*(double)(m+1)/(n+1))/d_n;
+		}
+	}
+
+
+
+	// Apply H (= K + V_loc + V_nl) to each state/band
 	for(ns = 0; ns < num_states; ns++) {
+
+		//
+		// Preparation for non-local potential.
+		//
+		// V_nl * Psi_G = Beta_Gn * SUM_m(D_nm * SUM_G'(Beta_G'm)) * Psi_G'
+		//              = Beta * D * (Beta<dagger> * Psi)
+		//
+		// Beta and D have been calculated before this loop.
+		//
+
+		// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
+		for (int m = 0; m < d_m; m++) {
+			for(np = 0; np < distr_local_npw; np++) {
+				beta_phi[m*distr_local_npw+np] = 
+					beta[(m+1)*distr_local_npw-np-1] * state[ns*distr_npw_localsize+np];
+			}
+		}
+
+		// Calculate d_beta (D * beta_phi)
+		for (int m = 0; m < d_m; m++) {
+			for(int n = 0; n < d_n; n++) {
+				d_beta[m*d_m+n] = 0.0+0.0*I;
+				for(np = 0; np < distr_local_npw; np++) {
+					d_beta[m*d_m+n] += nl_d[m*d_m+n] * beta_phi[m*num_pw_3d+np];
+				}
+			}
+		}
+
+		//
+		// Now start 'assembling' the hamiltonian (really applying its constituent
+		// parts in-place)
+		//
+
+		// Load wvfn at state/band ns into work array
 
 		for(np = 0; np < distr_local_npw; np++) {
 			tmp_state_in[np] = state[ns*distr_npw_localsize+np];
@@ -543,11 +657,21 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 			tmp_state_in[np] = H_local[np] * tmp_state[np]/num_pw_3d;
 		}
 
-		// Convert back to real space
+		// Convert back to reciprocal space
 		fftw_execute_dft(plan_backward_1d, tmp_state_in, tmp_state);
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
 				distr_max_n0, num_plane_waves, XZ);
 		fftw_execute_dft(plan_backward_2d, tmp_state_in, &H_state[ns*distr_npw_localsize]);
+
+		// Apply V_nl in reciprocal space
+		for (int n = 0; n < d_n; n++) {
+			for (int m = 0; m < d_m; m++) {
+				for(np = 0; np < distr_local_npw; np++) {
+					H_state[ns*distr_npw_localsize+np] +=
+						beta[n*distr_local_npw+np] * d_beta[m*d_m+n];
+				}
+			}
+		}
 
 		// Apply Kinetic H in reciprocal space
 		for(np = 0; np < distr_local_npw; np++) {
@@ -557,6 +681,11 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 	}
+
+	free(beta);
+	free(nl_d);
+	free(d_beta);
+	free(beta_phi);
 
 	free(tmp_state);
 	free(tmp_state_in);
@@ -588,6 +717,7 @@ void init_seed()
 
 void line_search(int num_plane_waves ,int num_states,
 		fftw_complex *approx_state, double *H_kinetic, double *H_local,
+		double *nl_base_state,
 		fftw_complex *direction, fftw_complex *gradient, double *eigenvalue,
 		double *energy)
 {
@@ -605,41 +735,46 @@ void line_search(int num_plane_waves ,int num_states,
 	double best_step;
 	double best_energy;
 	double denergy_dstep;
-	double mean_norm,inv_mean_norm,tmp_sum;
+	//double mean_norm,inv_mean_norm,tmp_sum;
+	double tmp_sum;
 	int i,loop,ns,np,offset;
 	double trial_step = 0.4;
 
-	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
+	//int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
 	// C doesn't have a nice epsilon() function like Fortran, so
 	// we use a lapack routine for this.
 	epsilon = LAPACKE_dlamch('e');
 
-	// To try to keep a convenient step length, we reduce the size of the search
-	// direction
-	mean_norm = 0.0;
-	tmp_sum = 0.0;
-//#pragma omp parallel for default(none) private(ns,offset,tmp_sum,np) \
-//	shared(num_states,num_pw_3d,direction) reduction(+:mean_norm)
-	for (ns = 0; ns < num_states; ns++) {
-		offset=ns*distr_npw_localsize;
-
-		for (np = 0; np < distr_local_npw; np++) {
-			// NOTE apparently taking mean_norm as sum(abs(direction)) converged
-			// faster than the original? Why?
-			//mean_norm += cabs(direction[offset+np]);
-			tmp_sum += pow(cabs(direction[offset+np]),2);
-		}
-
-		//tmp_sum    = sqrt(tmp_sum);
-		//mean_norm += tmp_sum;
-	}
-
-	MPI_Allreduce(&tmp_sum, &mean_norm, 1, MPI_DOUBLE, MPI_SUM,
-			MPI_COMM_WORLD);
-
-	mean_norm     = mean_norm/(double)num_states;
-	inv_mean_norm = 1.0/mean_norm;
+//	// To try to keep a convenient step length, we reduce the size of the search
+//	// direction
+//	mean_norm = 0.0;
+//	tmp_sum = 0.0;
+////#pragma omp parallel for default(none) private(ns,offset,tmp_sum,np) \
+////	shared(num_states,num_pw_3d,direction) reduction(+:mean_norm)
+//	for (ns = 0; ns < num_states; ns++) {
+//		offset=ns*distr_npw_localsize;
+//
+//		for (np = 0; np < distr_local_npw; np++) {
+//			// NOTE apparently taking mean_norm as sum(abs(direction)) converged
+//			// faster than the original? Why?
+//			//mean_norm += cabs(direction[offset+np]);
+//			tmp_sum += pow(cabs(direction[offset+np]),2);
+//		}
+//
+//		//tmp_sum    = sqrt(tmp_sum);
+//		//mean_norm += tmp_sum;
+//	}
+//
+//	MPI_Allreduce(&tmp_sum, &mean_norm, 1, MPI_DOUBLE, MPI_SUM,
+//			MPI_COMM_WORLD);
+//
+//	mean_norm     = mean_norm/(double)num_states;
+//	inv_mean_norm = 1.0/mean_norm;
+//
+//	for (np = 0; np < num_states * distr_local_npw; np++) {
+//		direction[np] = direction[np]*inv_mean_norm;
+//	}
 
 	// The rate-of-change of the energy is just 2*Re{direction.gradient}
 	denergy_dstep = 0.0;
@@ -689,8 +824,8 @@ void line_search(int num_plane_waves ,int num_states,
 		orthonormalise(distr_npw_localsize,num_states,tmp_state);
 
 		// Apply the H to this state
-		apply_hamiltonian(num_plane_waves,num_states,tmp_state,H_kinetic,H_local,
-				gradient);
+		apply_hamiltonian(num_plane_waves, num_states, tmp_state, H_kinetic,
+				H_local, nl_base_state, gradient);
 
 		// Compute the new energy estimate
 		tmp_energy = 0.0;
@@ -782,7 +917,7 @@ void line_search(int num_plane_waves ,int num_states,
 
 	// Apply the H to this state
 	apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,H_local,
-			gradient);
+			nl_base_state, gradient);
 
 	// Compute the new energy estimate
 	//*energy = 0.0;
@@ -827,7 +962,7 @@ void line_search(int num_plane_waves ,int num_states,
 
 			// Apply the H to this state
 			apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,
-					H_local,gradient);
+					H_local, nl_base_state, gradient);
 
 			// Compute the new energy estimate
 			//*energy = 0.0;
@@ -899,8 +1034,8 @@ void calculate_eigenvalues(int num_plane_waves, int num_states,
 }
 
 void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
-		double *H_local, fftw_complex *trial_wvfn, fftw_complex *gradient,
-		fftw_complex *rotation, double *eigenvalues)
+		double *H_local, double *nl_base_state, fftw_complex *trial_wvfn,
+		fftw_complex *gradient, fftw_complex *rotation, double *eigenvalues)
 {
 	int ns;
 	int iter, max_iter;
@@ -930,6 +1065,8 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 		total_energy += eigenvalues[ns];
 	}
 
+	mpi_printf("+-----------+----------------+-----------------+\n");
+	mpi_printf("|           |  Total energy  |  DeltaE         |\n");
 	mpi_printf("+-----------+----------------+-----------------+\n");
 	mpi_printf("|  Initial  | % #14.8g |                 |\n", total_energy);
 	mpi_printf("+-----------+----------------+-----------------+\n");
@@ -1008,8 +1145,8 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 
 		// Search along this direction for the best approx. eigenvectors, i.e. the
 		// lowest energy.
-		line_search(num_plane_waves,num_states,trial_wvfn,H_kinetic,H_local,
-				search_direction,gradient,eigenvalues,&total_energy);
+		line_search(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
+				nl_base_state, search_direction, gradient, eigenvalues, &total_energy);
 
 		if (check_convergence(previous_energy, total_energy, energy_tolerance)) {
 			break;

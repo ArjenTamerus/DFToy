@@ -17,6 +17,7 @@
 int main(int argc, char **argv)
 {
 	double *H_kinetic, *H_local;
+	double *nonlocal_base_state;
 	fftw_complex *full_H = NULL;
 	int num_wave_vectors, num_plane_waves;
 	int num_pw_3d;
@@ -40,10 +41,12 @@ int main(int argc, char **argv)
 
 	H_kinetic = calloc(num_pw_3d, sizeof(double));
 	H_local = calloc(num_pw_3d, sizeof(double));
+	nonlocal_base_state = calloc(num_pw_3d, sizeof(double));
 
 	//if (par_root) {
 		init_kinetic(H_kinetic, num_plane_waves);
 		init_local(H_local, num_plane_waves);
+		init_nonlocal_base(nonlocal_base_state, num_plane_waves);
 	//}
 
 	if (params.run_exact_solver) {
@@ -52,7 +55,8 @@ int main(int argc, char **argv)
 	}
 
 	if (params.run_iterative_solver) {
-		iterative_solver(num_plane_waves, num_states, H_kinetic, H_local, full_H);
+		iterative_solver(num_plane_waves, num_states, H_kinetic, H_local,
+				nonlocal_base_state, full_H);
 	}
 
 	if (full_H) {
@@ -62,6 +66,7 @@ int main(int argc, char **argv)
 	//if(par_root) {
 		free(H_kinetic);
 		free(H_local);
+		free(nonlocal_base_state);
 	//}
 
 	finalise_parallel();
@@ -75,22 +80,25 @@ int main(int argc, char **argv)
 void init_kinetic(double *H_kinetic, int num_plane_waves)
 {
 	int x, y, z;
-	int idx_, idy_, idz_;
+	int idx, idy, idz;
 	int pos;
+
+	int wavevectors = (num_plane_waves-1)/2;
 
 	mpi_printf("Initialising kinetic Hamiltonian...\n");
 
-	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
-		idz_ = z < 0 ? num_plane_waves+z : z;
+	for(idz = 0; idz < num_plane_waves; idz++) {
+		z = idz-wavevectors;
 
-		for(y = -(num_plane_waves/2); y < num_plane_waves/2+1; y++) {
-			idy_ = y < 0 ? num_plane_waves+y : y;
+		for(idy = 0; idy < num_plane_waves; idy++) {
+			y = idy-wavevectors;
 
-			for(x = -(num_plane_waves/2); x < num_plane_waves/2+1; x++) {
-				idx_ = x < 0 ? num_plane_waves+x : x;
+			for(idx = 0; idx < num_plane_waves; idx++) {
+				x = idx-wavevectors;
 
-				pos = idz_ * num_plane_waves * num_plane_waves + idy_ * num_plane_waves
-					+ idx_;
+				pos = idz * num_plane_waves * num_plane_waves + idy * num_plane_waves
+					+ idx;
+
 				H_kinetic[pos] = 0.5*(x*x+y*y+z*z);
 			}
 
@@ -103,27 +111,62 @@ void init_kinetic(double *H_kinetic, int num_plane_waves)
 void init_local(double *H_local, int num_plane_waves)
 {
 	int x, y, z;
-	int idx_, idy_, idz_;
+	int idx, idy, idz;
 	int pos;
 
+	int wavevectors = (num_plane_waves-1)/2;
 	int num_pw_3d = num_plane_waves*num_plane_waves*num_plane_waves;
 
 	mpi_printf("Initialising local Hamiltonian...\n");
 
+	for(idz = 0; idz < num_plane_waves; idz++) {
+		z = idz-wavevectors;
+
+		for(idy = 0; idy < num_plane_waves; idy++) {
+			y = idy-wavevectors;
+
+			for(idx = 0; idx < num_plane_waves; idx++) {
+				x = idx-wavevectors;
+
+				pos = idz * num_plane_waves * num_plane_waves + idy * num_plane_waves
+					+ idx;
+
+				H_local[pos] = -0.37/(0.005 + fabs(sqrt(x*x+y*y+z*z)/num_pw_3d - 0.5));
+			}
+		}
+	}
+
+}
+
+// Initialise nonlocal energy in realspace, s0 only?
+void init_nonlocal_base(double *nonlocal_base_state, int num_plane_waves) {
+
+	int x, y, z;
+	int idx_, idy_, idz_;
+	int pos;
+	int wavevectors = (num_plane_waves-1)/2;
+
+	double r, r_square;
+
 	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
 		idz_ = z < 0 ? num_plane_waves+z : z;
-
 		for(y = -(num_plane_waves/2); y < num_plane_waves/2+1; y++) {
 			idy_ = y < 0 ? num_plane_waves+y : y;
-
 			for(x = -(num_plane_waves/2); x < num_plane_waves/2+1; x++) {
 				idx_ = x < 0 ? num_plane_waves+x : x;
 
 				pos = idz_ * num_plane_waves * num_plane_waves + idy_ * num_plane_waves
 					+ idx_;
-				H_local[pos] = -0.37/(0.005 + fabs(sqrt(x*x+y*y+z*z)/num_pw_3d - 0.5));
+
+				r = sqrt(x*x+y*y+z*z)/wavevectors;
+				r_square = r*r;
+				nonlocal_base_state[pos] = pow(CONST_E, -r_square);
+				//printf("%f ", fac*nonlocal_base_state[pos]); 
 			}
+			//printf("\n");
 		}
+		//printf("\n");
 	}
+
 
 }
