@@ -35,9 +35,12 @@ int main(int argc, char **argv)
 
 	num_states = params.num_states;
 
+	params.num_plane_waves = num_plane_waves;
+
 	mpi_printf("num_wave_vectors:\t%d\n", num_wave_vectors);
 	mpi_printf("num_plane_waves:\t%d\n", num_plane_waves);
 	mpi_printf("num_pw_3d:\t\t%d\n", num_pw_3d);
+	mpi_printf("num_nl_states:\t%d\n", params.num_nl_states);
 
 	H_kinetic = calloc(num_pw_3d, sizeof(double));
 	H_local = calloc(num_pw_3d, sizeof(double));
@@ -55,7 +58,7 @@ int main(int argc, char **argv)
 	}
 
 	if (params.run_iterative_solver) {
-		iterative_solver(num_plane_waves, num_states, H_kinetic, H_local,
+		iterative_solver(&params, H_kinetic, H_local,
 				nonlocal_base_state, full_H);
 	}
 

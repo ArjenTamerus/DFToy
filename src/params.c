@@ -16,6 +16,8 @@
 struct option tc_params[] = {
 	{"wavevectors", required_argument, 0, 'w'},
 	{"states", required_argument, 0, 's'},
+	{"bands", required_argument, 0, 'b'}, // == states
+	{"nl_states", required_argument, 0, 'n'}, // non-local state
 	{"exact_solver", required_argument, 0, 'x'},
 	{"debug_iterative", no_argument, 0, 'd'},
 	{"exact", no_argument, 0, 'e'},
@@ -30,6 +32,7 @@ void set_default_configuration_params(struct toycode_params *params)
 {
 	params->num_wave_vectors = 12;
 	params->num_states = 4;
+	params->num_nl_states = 1;
 
 	params->run_exact_solver = false;
 	params->run_iterative_solver = true;
@@ -71,6 +74,10 @@ void get_configuration_params(int argc, char **argv,
 			break;
 		}
 		switch(opt_id) {
+			case 'b':
+				set_int_param(&(params->num_states), optarg, "--bands [-b]");
+				break;
+
 			case 'd':
 				set_debug_iterative = true;
 				break;
@@ -86,6 +93,10 @@ void get_configuration_params(int argc, char **argv,
 
 			case 'i':
 				set_run_iterative = true;
+				break;
+
+			case 'n':
+				set_int_param(&(params->num_nl_states), optarg, "--nl_states [-n]");
 				break;
 
 			case 's':
@@ -213,6 +224,10 @@ void usage()
 			"            Enable exact solver.\n\n"
 			" -i, --iterative\n"
 			"            Enable iterative solver.\n\n"
+			" -b <n>, --bands=<n>\n"
+			"            See '-s'\n"
+			" -n <n>, --nl_states=<n>\n"
+			"            Specify number of non-local states (size of beta).\n\n"
 			" -s <n>, --states=<n>\n"
 			"            Calculate <n> eigenstates.\n\n"
 			" -h, --help\n"
