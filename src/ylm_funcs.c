@@ -96,7 +96,6 @@ void apply_ylm_1_0(double scale_factor, int num_plane_waves, double *Vnl_base,
  double *beta)
 {
 	int x, y, z;
-	int ix, iy, iz;
 	int pos_x, pos_y, pos_z;
 	int pos;
 
@@ -127,12 +126,12 @@ void apply_ylm_1_1(double scale_factor, int num_plane_waves, double *Vnl_base,
 
 	int wavevectors = (num_plane_waves-1)/2;
 
-	for(z = -wavevectors; z < wavevectors+1; z++) {
-		pos_z = z < 0 ? num_plane_waves+z : z;
-		for(y = -wavevectors; y < wavevectors+1; y++) {
-			pos_y = y < 0 ? num_plane_waves+y : y;
-			for(x = -wavevectors; x < wavevectors+1; x++) {
-				pos_x = x < 0 ? num_plane_waves+x : x;
+	for(pos_z = 0; pos_z < num_plane_waves; pos_z++) {
+		z = (pos_z-wavevectors) / wavevectors;
+
+		for(pos_y = 0; pos_y < num_plane_waves; pos_y++) {
+
+			for(pos_x = 0; pos_x < num_plane_waves; pos_x++) {
 				
 				pos = pos_z * num_plane_waves * num_plane_waves +
 					pos_y * num_plane_waves + pos_x;
@@ -177,12 +176,12 @@ void apply_ylm_2_0(double scale_factor, int num_plane_waves, double *Vnl_base,
 
 	int wavevectors = (num_plane_waves-1)/2;
 
-	for(z = -wavevectors; z < wavevectors+1; z++) {
-		pos_z = z < 0 ? num_plane_waves+z : z;
-		for(y = -wavevectors; y < wavevectors+1; y++) {
-			pos_y = y < 0 ? num_plane_waves+y : y;
-			for(x = -wavevectors; x < wavevectors+1; x++) {
-				pos_x = x < 0 ? num_plane_waves+x : x;
+	for(pos_z = 0; pos_z < num_plane_waves; pos_z++) {
+		z = (pos_z-wavevectors) / wavevectors;
+
+		for(pos_y = 0; pos_y < num_plane_waves; pos_y++) {
+
+			for(pos_x = 0; pos_x < num_plane_waves; pos_x++) {
 				
 				pos = pos_z * num_plane_waves * num_plane_waves +
 					pos_y * num_plane_waves + pos_x;
