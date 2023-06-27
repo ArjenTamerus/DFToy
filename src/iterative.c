@@ -20,7 +20,7 @@ static ptrdiff_t distr_npw_localsize, distr_local_npw, distr_local_start,
 
 
 
-void iterative_solver(int num_plane_waves, int num_states, double *global_H_kinetic,
+void iterative_solver(struct toycode_params *params, double *global_H_kinetic,
 		double *global_H_local, double *nl_base_state, fftw_complex *exact_state)
 {
 	fftw_complex *trial_wvfn,
@@ -28,6 +28,9 @@ void iterative_solver(int num_plane_waves, int num_states, double *global_H_kine
 							 *rotation;
 	double *eigenvalues;
 
+	int num_plane_waves = params->num_plane_waves;
+	int num_states = params->num_states;
+	int num_nl_states = params->num_nl_states;
 	int num_pw_3d;
 
 	struct tc_timer iterative_timer;
@@ -502,7 +505,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 	int n[] = {num_plane_waves, num_plane_waves};
 
 	/* V_nl stuff */
-	int num_nl_states = num_states;
+	int num_nl_states = 0;
 	int d_m = num_nl_states;
 	int d_n = num_nl_states;
 
@@ -590,7 +593,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Need to decide on _some_ number for the scale factor...
-		double scale = (n+1.0) / num_nl_states;
+		double scale = 1.0;
 		beta_apply_ylm(n, l, m, scale, num_plane_waves, nl_base_state, beta);
 	}
 
@@ -599,7 +602,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 	for (int n = 0; n < d_n; n++) {
 		for (int m = 0; m <= n; m++) {
 			nl_d[n*d_n+m] = (0.1*(double)(m+1)/(n+1))/d_n;
-			nl_d[m*d_m+n] = (0.1*(double)(m+1)/(n+1))/d_n;
+			nl_d[m*d_n+n] = (0.1*(double)(m+1)/(n+1))/d_n;
 		}
 	}
 
@@ -617,23 +620,6 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		// Beta and D have been calculated before this loop.
 		//
 
-		// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
-		for (int m = 0; m < d_m; m++) {
-			for(np = 0; np < distr_local_npw; np++) {
-				beta_phi[m*distr_local_npw+np] = 
-					beta[(m+1)*distr_local_npw-np-1] * state[ns*distr_npw_localsize+np];
-			}
-		}
-
-		// Calculate d_beta (D * beta_phi)
-		for (int m = 0; m < d_m; m++) {
-			for(int n = 0; n < d_n; n++) {
-				d_beta[m*d_m+n] = 0.0+0.0*I;
-				for(np = 0; np < distr_local_npw; np++) {
-					d_beta[m*d_m+n] += nl_d[m*d_m+n] * beta_phi[m*num_pw_3d+np];
-				}
-			}
-		}
 
 		//
 		// Now start 'assembling' the hamiltonian (really applying its constituent
@@ -657,21 +643,40 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 			tmp_state_in[np] = H_local[np] * tmp_state[np]/num_pw_3d;
 		}
 
+		// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
+		for (int m = 0; m < d_m; m++) {
+			for(np = 0; np < distr_local_npw; np++) {
+				beta_phi[m*distr_local_npw+np] = 
+					beta[(m+1)*distr_local_npw-np-1] * tmp_state_in[np];
+			}
+		}
+
+		// Calculate d_beta (D * beta_phi)
+		for (int m = 0; m < d_m; m++) {
+			for(int n = 0; n < d_n; n++) {
+				d_beta[m*d_m+n] = 0.0+0.0*I;
+				for(np = 0; np < distr_local_npw; np++) {
+					d_beta[m*d_m+n] += nl_d[m*d_m+n] * beta_phi[m*num_pw_3d+np];
+				}
+			}
+		}
+
+		// Apply V_nl in real space
+		for (int n = 0; n < d_n; n++) {
+			for (int m = 0; m < d_m; m++) {
+				for(np = 0; np < distr_local_npw; np++) {
+					tmp_state_in[np] +=
+						beta[n*distr_local_npw+np] * d_beta[n*d_n+m];
+				}
+			}
+		}
+
 		// Convert back to reciprocal space
 		fftw_execute_dft(plan_backward_1d, tmp_state_in, tmp_state);
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
 				distr_max_n0, num_plane_waves, XZ);
 		fftw_execute_dft(plan_backward_2d, tmp_state_in, &H_state[ns*distr_npw_localsize]);
 
-		// Apply V_nl in reciprocal space
-		for (int n = 0; n < d_n; n++) {
-			for (int m = 0; m < d_m; m++) {
-				for(np = 0; np < distr_local_npw; np++) {
-					H_state[ns*distr_npw_localsize+np] +=
-						beta[n*distr_local_npw+np] * d_beta[m*d_m+n];
-				}
-			}
-		}
 
 		// Apply Kinetic H in reciprocal space
 		for(np = 0; np < distr_local_npw; np++) {

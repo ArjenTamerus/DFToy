@@ -16,7 +16,9 @@ static const fftw_complex CMPLX_1 = 1.0+0.0*I;
 struct toycode_params
 {
 	long int num_wave_vectors;
+	long int num_plane_waves;
 	long int num_states;
+	long int num_nl_states;
 
 	bool run_exact_solver;
 	bool run_iterative_solver;
@@ -39,7 +41,7 @@ void diagonalise_exact_solution(fftw_complex *full_H, double *eigenvalues,
 void report_eigenvalues(double *eigenvalues, int num_states);
 
 // iterative solver routines
-void iterative_solver(int num_plane_waves, int num_states,
+void iterative_solver(struct toycode_params *params,
 		double *H_kinetic, double *H_local, double *nl_base_state,
 		fftw_complex *exact_state);
 void randomise_state(int num_plane_waves, int num_states,
