@@ -16,8 +16,8 @@ endif
 
 ifdef WITH_SCALAPACK
 	SCALAPACK_CPPFLAGS=-DDFTOY_USE_SCALAPACK
-	SCALAPACK_LIBS=-lscalapack-openmpi
-	SCALAPACK_LDFLAGS=
+#	SCALAPACK_LIBS=-lscalapack-openmpi
+	SCALAPACK_LDFLAGS=-lmkl_scalapack_lp64 -lmkl_blacs_intelmpi_lp64
 endif
 
 
