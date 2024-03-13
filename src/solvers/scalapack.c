@@ -188,7 +188,6 @@ void diag_pzheevr(fftw_complex *full_H, double *eigenvalues,
 
 	iwork = TRACECALLOC(liwork,sizeof(int));
 
-	pzheevd_(&jobz, &uplo, &num_plane_waves, A, &one, &one, desc, eigenvalues, Z, &one, &one, desc, work, &lwork, rwork, &lrwork, iwork, &liwork, &status);
 	pzheevr_(&jobz, &range, &uplo, &num_plane_waves, A, &one, &one, desc, 
 			&VL, &VU, &IL, &IU, &eigenvalues_found, &eigenvectors_computed,
 			eigenvalues, Z, &one, &one, desc, work, &lwork, rwork, &lrwork, iwork, &liwork, &status);
