@@ -90,18 +90,34 @@ void init_kinetic(double *H_kinetic, int num_plane_waves)
 
 	mpi_printf("Initialising kinetic Hamiltonian...\n");
 
-	for(idz = 0; idz < num_plane_waves; idz++) {
-		z = idz-wavevectors;
+	//for(idz = 0; idz < num_plane_waves; idz++) {
+	//	z = idz-wavevectors;
 
-		for(idy = 0; idy < num_plane_waves; idy++) {
-			y = idy-wavevectors;
+	//	for(idy = 0; idy < num_plane_waves; idy++) {
+	//		y = idy-wavevectors;
 
-			for(idx = 0; idx < num_plane_waves; idx++) {
-				x = idx-wavevectors;
+	//		for(idx = 0; idx < num_plane_waves; idx++) {
+	//			x = idx-wavevectors;
+
+	//			pos = idz * num_plane_waves * num_plane_waves + idy * num_plane_waves
+	//				+ idx;
+
+	//			H_kinetic[pos] = 0.5*(x*x+y*y+z*z);
+	//		}
+
+	//	}
+
+	//}
+
+	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
+		idz = z < 0 ? num_plane_waves+z : z;
+		for(y = -(num_plane_waves/2); y < num_plane_waves/2+1; y++) {
+			idy = y < 0 ? num_plane_waves+y : y;
+			for(x = -(num_plane_waves/2); x < num_plane_waves/2+1; x++) {
+				idx = x < 0 ? num_plane_waves+x : x;
 
 				pos = idz * num_plane_waves * num_plane_waves + idy * num_plane_waves
 					+ idx;
-
 				H_kinetic[pos] = 0.5*(x*x+y*y+z*z);
 			}
 
@@ -122,23 +138,38 @@ void init_local(double *H_local, int num_plane_waves)
 
 	mpi_printf("Initialising local Hamiltonian...\n");
 
-	for(idz = 0; idz < num_plane_waves; idz++) {
-		z = idz-wavevectors;
+	//for(idz = 0; idz < num_plane_waves; idz++) {
+	//	z = idz-wavevectors;
 
-		for(idy = 0; idy < num_plane_waves; idy++) {
-			y = idy-wavevectors;
+	//	for(idy = 0; idy < num_plane_waves; idy++) {
+	//		y = idy-wavevectors;
 
-			for(idx = 0; idx < num_plane_waves; idx++) {
-				x = idx-wavevectors;
+	//		for(idx = 0; idx < num_plane_waves; idx++) {
+	//			x = idx-wavevectors;
+
+	//			pos = idz * num_plane_waves * num_plane_waves + idy * num_plane_waves
+	//				+ idx;
+
+	//			H_local[pos] = -0.37/(0.005 + fabs(sqrt(x*x+y*y+z*z)/num_pw_3d - 0.5));
+	//		}
+	//	}
+	//}
+
+	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
+		idz = z < 0 ? num_plane_waves+z : z;
+		for(y = -(num_plane_waves/2); y < num_plane_waves/2+1; y++) {
+			idy = y < 0 ? num_plane_waves+y : y;
+			for(x = -(num_plane_waves/2); x < num_plane_waves/2+1; x++) {
+				idx = x < 0 ? num_plane_waves+x : x;
 
 				pos = idz * num_plane_waves * num_plane_waves + idy * num_plane_waves
 					+ idx;
+
 
 				H_local[pos] = -0.37/(0.005 + fabs(sqrt(x*x+y*y+z*z)/num_pw_3d - 0.5));
 			}
 		}
 	}
-
 }
 
 // Initialise nonlocal energy in realspace, s0 only?
