@@ -227,9 +227,9 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 	global_overlap = calloc(num_states*num_states, sizeof(fftw_complex));
 
 	// overlap matrix
-//#pragma omp parallel for default(none) shared(num_states,distr_npw_localsize, \
-//		distr_local_npw,overlap,trial_wvfn) \
-//	private(ns1,ns2,offset_ns1,offset_ns2,pw)
+#pragma omp parallel for default(none) shared(num_states,distr_npw_localsize, \
+		distr_local_npw,overlap,trial_wvfn) \
+	private(ns1,ns2,offset_ns1,offset_ns2,pw)
 	for (ns2 = 0; ns2 < num_states; ns2++) {
 		offset_ns2 = ns2*distr_npw_localsize;
 		for (ns1 = 0; ns1 < num_states; ns1++) {
@@ -237,9 +237,9 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 
 			overlap[ns2*num_states+ns1] = 0.0+0.0*I;
 
-#pragma novector // Intel icx 2023.1 miscompiles this loop and throws around
-								 // NaNs and Infinities for e.g. -w 5 -s 1 with -O2+ and AVX2.
-								 // TODO Fix? Report? Ignore?
+//#pragma novector // Intel icx 2023.1 miscompiles this loop and throws around
+//								 // NaNs and Infinities for e.g. -w 5 -s 1 with -O2+ and AVX2.
+//								 // TODO Fix? Report? Ignore?
 			for (pw = 0; pw < distr_local_npw; pw++) {
 				overlap[ns2*num_states+ns1] += conj(trial_wvfn[offset_ns1+pw])
 					* trial_wvfn[offset_ns2+pw];
@@ -296,9 +296,12 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 	int local_state_offset;
 
 
-//#pragma omp parallel for default(none) shared(num_states,num_plane_waves,ref_state,state) private(ns1,ns2,state_offset,ref_state_offset,pw,local_ref_state_offset,local_state_offset,overlap)
 	for (ns2=0;ns2<num_states;ns2++) {
 		state_offset = ns2*num_plane_waves;
+#pragma omp parallel default(none) shared(distr_local_npw,global_overlap,num_states, \
+		num_plane_waves,ref_state,state,ns2,state_offset,overlap) \
+		private(ns1,pw,local_ref_state_offset,ref_state_offset,local_state_offset)
+			{
 		for (ns1=0;ns1<num_states;ns1++) {
 			ref_state_offset = ns1*num_plane_waves;
 
@@ -306,6 +309,7 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 
 			// Calculate overlap
 			// Dot. Prod. = SUM_i(cplx_conj(a)_i*b_i)
+#pragma omp for reduction(+:overlap)
 			for (pw=0; pw < distr_local_npw; pw++) {
 				local_ref_state_offset = ref_state_offset+pw;
 				local_state_offset = state_offset+pw;
@@ -315,10 +319,14 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 
 			}
 
+#pragma omp single
+			{
 			MPI_Allreduce(&overlap, &global_overlap, 2, MPI_DOUBLE, MPI_SUM,
 					MPI_COMM_WORLD);
-			
+			}
+
 			// remove overlap from state
+#pragma omp for
 			for (pw=0; pw < distr_local_npw; pw++) {
 				local_ref_state_offset = ref_state_offset+pw;
 				local_state_offset = state_offset+pw;
@@ -326,6 +334,7 @@ void orthogonalise(int num_plane_waves, int num_states, fftw_complex *state,
 				state[local_state_offset] -= global_overlap*ref_state[local_ref_state_offset];
 			}
 		}
+			}//end parallel
 	}
 
 }
@@ -340,7 +349,6 @@ void precondition(int num_plane_waves, int num_states,
 	double kinetic_eigenvalue;
 	double x, tmp; 
 
-//#pragma omp parallel for default(none) shared(num_states,num_plane_waves,trial_wvfn,H_kinetic,search_direction) private(offset,kinetic_eigenvalue,np,x,tmp)
 	for (ns = 0;ns < num_states; ns++) {
 		/* |---------------------------------------------------------------------|
 			 | You need to compute the kinetic energy "eigenvalue" for state ns.   |
@@ -365,6 +373,9 @@ void precondition(int num_plane_waves, int num_states,
 		kinetic_eigenvalue = 0.0;
 		double global_kinetic_eigenvalue = 0.0;
 
+#pragma omp parallel default(none) shared(num_states,num_plane_waves,trial_wvfn,H_kinetic,search_direction,offset,kinetic_eigenvalue,global_kinetic_eigenvalue) private(np,x,tmp)
+		{
+#pragma omp for reduction(+:kinetic_eigenvalue)
 		for (np = 0; np < distr_local_npw; np++) {
 			kinetic_eigenvalue += H_kinetic[np]
 				* creal(trial_wvfn[offset + np]) * creal(trial_wvfn[offset + np])
@@ -372,9 +383,13 @@ void precondition(int num_plane_waves, int num_states,
 				* cimag(trial_wvfn[offset + np]);
 		}
 
+#pragma omp single
+		{
 		MPI_Allreduce(&kinetic_eigenvalue, &global_kinetic_eigenvalue, 1,
 				MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		}
 
+#pragma omp for
 		for (np = 0; np < distr_local_npw; np++) {
 			/* |----------------------------------------------------------------|
 				 | You need to compute and apply the preconditioning, using the   |
@@ -394,6 +409,9 @@ void precondition(int num_plane_waves, int num_states,
 			search_direction[offset + np] *= tmp / (tmp + x*x*x*x);
 
 
+		}
+
+		// end parallel
 		}
 	}
 
@@ -416,7 +434,7 @@ void diagonalise(int num_plane_waves,int num_states, fftw_complex *state,
 	fftw_complex local_rotation[num_states*num_states];
 
 	// Compute the subspace H matrix and store in rotation array
-//#pragma omp parallel for default(none) shared(num_states,num_plane_waves,state,local_rotation,H_state) private(ns1,ns2,offset_ns1,offset_ns2,i)
+#pragma omp parallel for default(none) shared(num_states,num_plane_waves,state,local_rotation,H_state,distr_local_npw) private(ns1,ns2,offset_ns1,offset_ns2,i)
 	for (ns2=0;ns2<num_states;ns2++) {
 		offset_ns2 = ns2*num_plane_waves;
 		for (ns1=0;ns1<num_states;ns1++) {
@@ -459,17 +477,19 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state,
 
 	new_state = calloc(num_plane_waves * num_states, sizeof(fftw_complex));
 
+#pragma omp parallel default(none) \
+	shared(new_state,state,transformation,num_plane_waves,num_states,distr_local_npw) \
+	private(ns1,ns2,offset_ns2,offset_ns1,pw)
+{
 	for(ns2 = 0; ns2 < num_states; ns2++) {
 		offset_ns2 = ns2*num_plane_waves;
 
-//#pragma omp parallel for default(none) \
-//	shared(ns2,offset_ns2,new_state,state,transformation,num_plane_waves,num_states) \
-//	private(ns1,offset_ns1,pw)
+#pragma omp for collapse(2)
 		for(ns1 = 0; ns1 < num_states; ns1++) {
-			offset_ns1 = ns1*num_plane_waves;
+			//offset_ns1 = ns1*num_plane_waves;
 
 			for(pw = 0; pw < distr_local_npw; pw++) {
-				new_state[offset_ns1 + pw] += state[offset_ns2 + pw]
+				new_state[ns1*num_plane_waves + pw] += state[offset_ns2 + pw]
 					* transformation[ns1 * num_states + ns2];
 			}
 
@@ -478,9 +498,11 @@ void transform(int num_plane_waves, int num_states, fftw_complex *state,
 	}
 
 	// copyback
+#pragma omp for
 	for (pw = 0; pw < num_plane_waves * num_states; pw++) {
 		state[pw] = new_state[pw];
 	}
+}//end omp parallel
 
 	free(new_state);
 }
@@ -609,6 +631,11 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 
 
 	// Apply H (= K + V_loc + V_nl) to each state/band
+#pragma omp parallel default(none) shared(num_states,num_pw_3d,tmp_state,tmp_state_in, \
+		plan_forward_1d, plan_forward_2d, plan_backward_1d, plan_backward_2d, distr_local_start, \
+		distr_max_n0, distr_local_npw, num_plane_waves, H_local, H_kinetic, beta, beta_phi, \
+		d_beta, nl_d, H_state, d_m, d_n, distr_npw_localsize, state) \
+	private(np, m, n, ns,)
 	for(ns = 0; ns < num_states; ns++) {
 
 		//
@@ -628,22 +655,28 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 
 		// Load wvfn at state/band ns into work array
 
+#pragma omp for
 		for(np = 0; np < distr_local_npw; np++) {
 			tmp_state_in[np] = state[ns*distr_npw_localsize+np];
 		}
 
+#pragma omp single
+		{
 		// Convert from reciprocal to real space
 		fftw_execute_dft(plan_forward_2d, tmp_state_in, tmp_state);
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
 				distr_max_n0, num_plane_waves, XZ);
 		fftw_execute_dft(plan_forward_1d, tmp_state_in, tmp_state);
+		}
 
 		// Apply local H in real space
+#pragma omp for
 		for(np = 0; np < distr_local_npw; np++){
 			tmp_state_in[np] = H_local[np] * tmp_state[np]/num_pw_3d;
 		}
 
 		// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
+#pragma omp for collapse(2)
 		for (int m = 0; m < d_m; m++) {
 			for(np = 0; np < distr_local_npw; np++) {
 				beta_phi[m*distr_local_npw+np] = 
@@ -652,16 +685,18 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Calculate d_beta (D * beta_phi)
+#pragma omp for collapse(3)
 		for (int m = 0; m < d_m; m++) {
 			for(int n = 0; n < d_n; n++) {
 				d_beta[m*d_m+n] = 0.0+0.0*I;
 				for(np = 0; np < distr_local_npw; np++) {
-					d_beta[m*d_m+n] += nl_d[m*d_m+n] * beta_phi[m*num_pw_3d+np];
+					d_beta[m*d_m+n] += nl_d[m*d_m+n] * beta_phi[m*distr_local_npw+np];
 				}
 			}
 		}
 
 		// Apply V_nl in real space
+#pragma omp for collapse(3)
 		for (int n = 0; n < d_n; n++) {
 			for (int m = 0; m < d_m; m++) {
 				for(np = 0; np < distr_local_npw; np++) {
@@ -672,13 +707,17 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Convert back to reciprocal space
+#pragma omp single
+		{
 		fftw_execute_dft(plan_backward_1d, tmp_state_in, tmp_state);
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
 				distr_max_n0, num_plane_waves, XZ);
 		fftw_execute_dft(plan_backward_2d, tmp_state_in, &H_state[ns*distr_npw_localsize]);
+		}
 
 
 		// Apply Kinetic H in reciprocal space
+#pragma omp for
 		for(np = 0; np < distr_local_npw; np++) {
 			H_state[ns*distr_npw_localsize+np] = H_state[ns*distr_npw_localsize+np] 
 				+ H_kinetic[np]*state[ns*distr_npw_localsize+np];
@@ -740,8 +779,8 @@ void line_search(int num_plane_waves ,int num_states,
 	double best_step;
 	double best_energy;
 	double denergy_dstep;
-	//double mean_norm,inv_mean_norm,tmp_sum;
-	double tmp_sum;
+	double mean_norm,inv_mean_norm,tmp_sum;
+	//double tmp_sum;
 	int i,loop,ns,np,offset;
 	double trial_step = 0.4;
 
@@ -751,35 +790,35 @@ void line_search(int num_plane_waves ,int num_states,
 	// we use a lapack routine for this.
 	epsilon = LAPACKE_dlamch('e');
 
-//	// To try to keep a convenient step length, we reduce the size of the search
-//	// direction
-//	mean_norm = 0.0;
-//	tmp_sum = 0.0;
-////#pragma omp parallel for default(none) private(ns,offset,tmp_sum,np) \
-////	shared(num_states,num_pw_3d,direction) reduction(+:mean_norm)
-//	for (ns = 0; ns < num_states; ns++) {
-//		offset=ns*distr_npw_localsize;
-//
-//		for (np = 0; np < distr_local_npw; np++) {
-//			// NOTE apparently taking mean_norm as sum(abs(direction)) converged
-//			// faster than the original? Why?
-//			//mean_norm += cabs(direction[offset+np]);
-//			tmp_sum += pow(cabs(direction[offset+np]),2);
-//		}
-//
-//		//tmp_sum    = sqrt(tmp_sum);
-//		//mean_norm += tmp_sum;
-//	}
-//
-//	MPI_Allreduce(&tmp_sum, &mean_norm, 1, MPI_DOUBLE, MPI_SUM,
-//			MPI_COMM_WORLD);
-//
-//	mean_norm     = mean_norm/(double)num_states;
-//	inv_mean_norm = 1.0/mean_norm;
-//
-//	for (np = 0; np < num_states * distr_local_npw; np++) {
-//		direction[np] = direction[np]*inv_mean_norm;
-//	}
+	// To try to keep a convenient step length, we reduce the size of the search
+	// direction
+	mean_norm = 0.0;
+	tmp_sum = 0.0;
+//#pragma omp parallel for default(none) private(ns,offset,tmp_sum,np) \
+//	shared(num_states,num_pw_3d,direction) reduction(+:mean_norm)
+	for (ns = 0; ns < num_states; ns++) {
+		offset=ns*distr_npw_localsize;
+
+		for (np = 0; np < distr_local_npw; np++) {
+			// NOTE apparently taking mean_norm as sum(abs(direction)) converged
+			// faster than the original? Why?
+			//mean_norm += cabs(direction[offset+np]);
+			tmp_sum += pow(cabs(direction[offset+np]),2);
+		}
+
+		//tmp_sum    = sqrt(tmp_sum);
+		//mean_norm += tmp_sum;
+	}
+
+	MPI_Allreduce(&tmp_sum, &mean_norm, 1, MPI_DOUBLE, MPI_SUM,
+			MPI_COMM_WORLD);
+
+	mean_norm     = mean_norm/(double)num_states;
+	inv_mean_norm = 1.0/mean_norm;
+
+	for (np = 0; np < num_states * distr_npw_localsize; np++) {
+		direction[np] = direction[np]*inv_mean_norm;
+	}
 
 	// The rate-of-change of the energy is just 2*Re{direction.gradient}
 	denergy_dstep = 0.0;
@@ -1052,7 +1091,7 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 	int CG_RESET=5;
 	double gamma, gTxg=0.0, gTxg_prev=1.0;
 	double previous_energy;
-	double energy_tolerance = 1.e-7;
+	double energy_tolerance = 1.e-11;
 
 	double total_energy = 0.;
 
