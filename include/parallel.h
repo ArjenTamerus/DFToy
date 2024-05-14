@@ -1,6 +1,7 @@
 #ifndef TC_PARALLEL_H
 #define TC_PARALLEL_H
 
+
 #include <stdbool.h>
 #include <complex.h>
 #include <mpi.h>
@@ -10,6 +11,10 @@
 #define XZ 0
 #define XY 1
 #define YZ 1
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 extern int world_size, world_rank;
 extern int blacs_ctxt, blacs_ctxt_root;
@@ -49,4 +54,7 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 		int direction);
 
 void omp_init();
+#ifdef __cplusplus
+}
+#endif
 #endif

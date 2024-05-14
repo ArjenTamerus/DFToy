@@ -1,6 +1,10 @@
 #ifndef TC_TRACE_H
 #define TC_TRACE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <sys/time.h>
 
@@ -26,4 +30,7 @@ void reset_timer(struct tc_timer *timer);
 void destroy_timer(struct tc_timer *timer);
 void report_timer(struct tc_timer *timer);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

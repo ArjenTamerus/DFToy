@@ -1,6 +1,10 @@
 #ifndef TC_INTERFACES_H
 #define TC_INTERFACES_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <complex.h>
 #include <fftw3.h>
@@ -10,8 +14,10 @@
 // TODO move/fix
 #define CONST_E 2.71828182845904523536
 #define CONST_PI 3.1415
+#ifndef __cplusplus
 static const fftw_complex CMPLX_0 = 0.0+0.0*I;
 static const fftw_complex CMPLX_1 = 1.0+0.0*I;
+#endif
 
 struct toycode_params
 {
@@ -114,4 +120,13 @@ void apply_ylm_2_2(double scale_factor, int num_plane_waves, double *Vnl_base,
  double *beta);
 void apply_ylm_2_n2(double scale_factor, int num_plane_waves, double *Vnl_base,
  double *beta);
+
+void c_call_sycl_iterative_solver(struct toycode_params *params, double *global_H_kinetic,
+		double *global_H_local, double *nl_base_state, void *exact_state);
+
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

@@ -13,7 +13,7 @@
 #include <math.h>
 #include <time.h>
 #include <fftw3.h>
-#include <lapacke.h>
+//#include <lapacke.h>
 #include "parallel.h"
 #include "diag.h"
 #include "interfaces.h"

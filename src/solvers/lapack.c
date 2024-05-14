@@ -10,7 +10,7 @@
 #include <math.h>
 #include <time.h>
 #include <fftw3.h>
-#include <lapacke.h>
+//#include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
 #include <diag.h>
@@ -30,8 +30,8 @@ void diag_zheev(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
 
 	mpi_printf("Performing exact diagonalisation with ZHEEV...\n");
 
-	err = LAPACKE_zheev(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H,
-			num_plane_waves, eigenvalues);
+//	err = LAPACKE_zheev(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H,
+//			num_plane_waves, eigenvalues);
 
 	diag_abort_on_error(err, "ZHEEV");
 }
@@ -42,8 +42,8 @@ void diag_zheevd(fftw_complex *full_H, double *eigenvalues, int num_plane_waves)
 
 	mpi_printf("Performing exact diagonalisation with ZHEEVD...\n");
 
-	err = LAPACKE_zheevd(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H,
-			num_plane_waves, eigenvalues);
+//	err = LAPACKE_zheevd(LAPACK_COL_MAJOR, 'V', 'U', num_plane_waves, full_H,
+//			num_plane_waves, eigenvalues);
 
 	diag_abort_on_error(err, "ZHEEVD");
 }
@@ -53,6 +53,7 @@ void diag_zheevr(fftw_complex *full_H, double *eigenvalues, int num_plane_waves,
 		int num_states)
 {
 	mpi_printf("Performing exact diagonalisation with ZHEEVR...\n");
+	int err;
 
 	char jobz = 'V';
 	char uplo = 'U';
@@ -79,9 +80,9 @@ void diag_zheevr(fftw_complex *full_H, double *eigenvalues, int num_plane_waves,
 	int ldZ = num_plane_waves;
 	fftw_complex *z_work = TRACEFFTW_MALLOC(ldZ*num_states*sizeof(fftw_complex));
 
-	int err = LAPACKE_zheevr(LAPACK_COL_MAJOR, jobz, range, uplo, num_plane_waves,
-			full_H, num_plane_waves, VL, VU, IL, IU, abstol, &eigenvals_found,
-			eigenvalues, z_work, ldZ, isuppz);
+//	int err = LAPACKE_zheevr(LAPACK_COL_MAJOR, jobz, range, uplo, num_plane_waves,
+//			full_H, num_plane_waves, VL, VU, IL, IU, abstol, &eigenvals_found,
+//			eigenvalues, z_work, ldZ, isuppz);
 
 	diag_abort_on_error(err, "ZHEEVR");
 

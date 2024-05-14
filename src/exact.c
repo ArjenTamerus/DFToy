@@ -11,7 +11,7 @@
 #include <complex.h>
 #include <fftw3.h>
 #include <math.h>
-#include <lapacke.h>
+//#include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
 #include "diag.h"

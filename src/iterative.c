@@ -9,8 +9,8 @@
 #include <complex.h>
 #include <math.h>
 #include <fftw3-mpi.h>
-#include <cblas.h>
-#include <lapacke.h>
+//#include <cblas.h>
+//#include <lapacke.h>
 #include "parallel.h"
 #include "interfaces.h"
 #include "trace.h"
@@ -50,6 +50,9 @@ void iterative_solver(struct toycode_params *params, double *global_H_kinetic,
 			MPI_MAX, MPI_COMM_WORLD);
 
 	distr_local_npw = distr_local_n0 * num_plane_waves * num_plane_waves;
+	c_call_sycl_iterative_solver(params, global_H_kinetic, global_H_local, nl_base_state,
+			exact_state);
+	return;
 
 	double *H_kinetic = &(global_H_kinetic[(distr_local_start)*num_plane_waves*num_plane_waves]);
 	double *H_local = &(global_H_local[(distr_local_start)*num_plane_waves*num_plane_waves]);
@@ -119,7 +122,7 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 	int num_pw_2d = num_plane_waves * num_plane_waves;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
 
-	mpi_printf("Randomise state\n");
+	mpi_printf("Randomise state - %d, %d, %p\n", num_plane_waves, num_states, state);
 
 	int x, y, z;
 	int pos;
@@ -190,7 +193,6 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 		}
 	}
 
-
 	free(tmp_state);
 
 }
@@ -215,6 +217,8 @@ void take_exact_state(int num_plane_waves, int num_states,
 
 }
 
+	extern void zpotrf_(char *a, int *b, fftw_complex *c, int *d, int *e);
+	extern void ztrtri_(char*, char*, int*, fftw_complex*, int*, int*);
 void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 		*trial_wvfn)
 {
@@ -251,15 +255,16 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 			MPI_SUM, MPI_COMM_WORLD);
 
 	// compute cholesky factorisation of overlap matrix
-	err = LAPACKE_zpotrf(LAPACK_COL_MAJOR, 'U', num_states, global_overlap, num_states);
+	char u = 'U';
+	zpotrf_(&u, &num_states, global_overlap, &num_states, &err);
 	if (err) {
 		mpi_error("zpotrf failed: %d\n", err);
 		exit(EXIT_FAILURE);
 	}
 
 	// invert
-	err = LAPACKE_ztrtri(LAPACK_COL_MAJOR, 'U', 'N', num_states, global_overlap,
-			num_states);
+	char n = 'N';
+	ztrtri_(&u, &n, &num_states, global_overlap, &num_states, &err);
 	if (err) {
 		mpi_error("ztrtri failed: %d\n", err);
 		exit(EXIT_FAILURE);
@@ -417,6 +422,8 @@ void precondition(int num_plane_waves, int num_states,
 
 }
 
+	extern void zheev_(char*, char*, int*, fftw_complex*, int*, double*,
+			fftw_complex*, int*, double*, int*);
 
 void diagonalise(int num_plane_waves,int num_states, fftw_complex *state,
 		fftw_complex *H_state, double *eigenvalues, fftw_complex *rotation)
@@ -454,8 +461,13 @@ void diagonalise(int num_plane_waves,int num_states, fftw_complex *state,
 			MPI_SUM, MPI_COMM_WORLD);
 
 	// Diagonalise to get eigenvectors and eigenvalues
-	err = LAPACKE_zheev(LAPACK_ROW_MAJOR, 'V', 'U', num_states, rotation,
-			num_states, eigenvalues);
+	char u = 'U';
+	char v = 'V';
+	fftw_complex *work = NULL;
+	double *rwork = calloc(3*num_states-2, sizeof(double));
+	int lwork = 2*num_states-1;
+	work = calloc(lwork, sizeof(fftw_complex));
+	zheev_(&v, &u, &num_states, rotation, &num_states, eigenvalues, work, &lwork, rwork, &err);
 
 	if(err) {
 		mpi_fail("LAPACK error in diagonalise().\n");
@@ -541,9 +553,11 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 	beta_phi = calloc(num_pw_3d*d_m,sizeof(fftw_complex));
 	d_beta = calloc(d_m*d_m, sizeof(fftw_complex));
 
-
+	tmp_state = calloc(distr_npw_localsize,sizeof(fftw_complex));
+	tmp_state_in = calloc(distr_npw_localsize,sizeof(fftw_complex));
 	/* end V_nl stuff */
 
+#pragma omp target variant dispatch
 	plan_forward_1d = fftw_plan_many_dft(
 			 1, &num_plane_waves, distr_local_n0*num_plane_waves,
 			 tmp_state_in, &num_plane_waves,
@@ -553,6 +567,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 			 FFTW_FORWARD, FFTW_ESTIMATE
 			 );
 
+#pragma omp target variant dispatch
 	plan_forward_2d = fftw_plan_many_dft(
 			 2, n, distr_local_n0,
 			 tmp_state_in, n,
@@ -562,6 +577,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 			 FFTW_BACKWARD, FFTW_ESTIMATE
 			 );
 
+#pragma omp target variant dispatch
 	plan_backward_1d = fftw_plan_many_dft(
 			 1, &num_plane_waves, distr_local_n0*num_plane_waves,
 			 tmp_state_in, &num_plane_waves,
@@ -571,6 +587,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 			 FFTW_BACKWARD, FFTW_ESTIMATE
 			 );
 
+#pragma omp target variant dispatch
 	plan_backward_2d = fftw_plan_many_dft(
 			 2, n, distr_local_n0,
 			 tmp_state_in, n,
@@ -579,9 +596,6 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 			 1, num_plane_waves*num_plane_waves,
 			 FFTW_BACKWARD, FFTW_ESTIMATE
 			 );
-
-	tmp_state = calloc(distr_npw_localsize,sizeof(fftw_complex));
-	tmp_state_in = calloc(distr_npw_localsize,sizeof(fftw_complex));
 	
 	//
 	// V_nl - Calculate Beta [plane waves * m] from base state (e^-r)
@@ -631,11 +645,11 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 
 
 	// Apply H (= K + V_loc + V_nl) to each state/band
-#pragma omp parallel default(none) shared(num_states,num_pw_3d,tmp_state,tmp_state_in, \
-		plan_forward_1d, plan_forward_2d, plan_backward_1d, plan_backward_2d, distr_local_start, \
-		distr_max_n0, distr_local_npw, num_plane_waves, H_local, H_kinetic, beta, beta_phi, \
-		d_beta, nl_d, H_state, d_m, d_n, distr_npw_localsize, state) \
-	private(np, m, n, ns,)
+//#pragma omp parallel default(none) shared(num_states,num_pw_3d,tmp_state,tmp_state_in, \
+//		plan_forward_1d, plan_forward_2d, plan_backward_1d, plan_backward_2d, distr_local_start, \
+//		distr_max_n0, distr_local_npw, num_plane_waves, H_local, H_kinetic, beta, beta_phi, \
+//		d_beta, nl_d, H_state, d_m, d_n, distr_npw_localsize, state) \
+//	private(np, m, n, ns,)
 	for(ns = 0; ns < num_states; ns++) {
 
 		//
@@ -655,28 +669,36 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 
 		// Load wvfn at state/band ns into work array
 
-#pragma omp for
+//#pragma omp for
 		for(np = 0; np < distr_local_npw; np++) {
 			tmp_state_in[np] = state[ns*distr_npw_localsize+np];
 		}
 
-#pragma omp single
+//#pragma omp single
 		{
 		// Convert from reciprocal to real space
+#pragma omp target data map(tofrom:tmp_state[0:distr_npw_localsize],tmp_state_in[0:distr_npw_localsize])
+{
+#pragma omp target data use_device_ptr(tmp_state,tmp_state_in)
+	{
+#pragma omp target variant dispatch
 		fftw_execute_dft(plan_forward_2d, tmp_state_in, tmp_state);
+	}
+}
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
 				distr_max_n0, num_plane_waves, XZ);
+#pragma omp target variant dispatch
 		fftw_execute_dft(plan_forward_1d, tmp_state_in, tmp_state);
 		}
 
 		// Apply local H in real space
-#pragma omp for
+//#pragma omp for
 		for(np = 0; np < distr_local_npw; np++){
 			tmp_state_in[np] = H_local[np] * tmp_state[np]/num_pw_3d;
 		}
 
 		// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
-#pragma omp for collapse(2)
+//#pragma omp for collapse(2)
 		for (int m = 0; m < d_m; m++) {
 			for(np = 0; np < distr_local_npw; np++) {
 				beta_phi[m*distr_local_npw+np] = 
@@ -685,7 +707,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Calculate d_beta (D * beta_phi)
-#pragma omp for collapse(3)
+//#pragma omp for collapse(3)
 		for (int m = 0; m < d_m; m++) {
 			for(int n = 0; n < d_n; n++) {
 				d_beta[m*d_m+n] = 0.0+0.0*I;
@@ -696,7 +718,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Apply V_nl in real space
-#pragma omp for collapse(3)
+//#pragma omp for collapse(3)
 		for (int n = 0; n < d_n; n++) {
 			for (int m = 0; m < d_m; m++) {
 				for(np = 0; np < distr_local_npw; np++) {
@@ -707,17 +729,19 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Convert back to reciprocal space
-#pragma omp single
+//#pragma omp single
 		{
+#pragma omp target variant dispatch
 		fftw_execute_dft(plan_backward_1d, tmp_state_in, tmp_state);
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
 				distr_max_n0, num_plane_waves, XZ);
+#pragma omp target variant dispatch
 		fftw_execute_dft(plan_backward_2d, tmp_state_in, &H_state[ns*distr_npw_localsize]);
 		}
 
 
 		// Apply Kinetic H in reciprocal space
-#pragma omp for
+//#pragma omp for
 		for(np = 0; np < distr_local_npw; np++) {
 			H_state[ns*distr_npw_localsize+np] = H_state[ns*distr_npw_localsize+np] 
 				+ H_kinetic[np]*state[ns*distr_npw_localsize+np];
@@ -759,6 +783,7 @@ void init_seed()
 	}
 }
 
+extern void dlamch_(char*, double*);
 void line_search(int num_plane_waves ,int num_states,
 		fftw_complex *approx_state, double *H_kinetic, double *H_local,
 		double *nl_base_state,
@@ -788,7 +813,8 @@ void line_search(int num_plane_waves ,int num_states,
 
 	// C doesn't have a nice epsilon() function like Fortran, so
 	// we use a lapack routine for this.
-	epsilon = LAPACKE_dlamch('e');
+	char e = 'e';
+	dlamch_(&e, &epsilon);
 
 	// To try to keep a convenient step length, we reduce the size of the search
 	// direction
@@ -1137,6 +1163,7 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 			// search_direction gets mangled inside the line_search function
 			search_direction[i] = -gradient[i];
 		}
+
 
 		//* PRECON */
 		precondition(distr_npw_localsize, num_states, search_direction, trial_wvfn,

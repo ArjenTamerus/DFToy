@@ -9,10 +9,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <complex.h>
-#include <fftw3.h>
 #include <math.h>
 #include "parallel.h"
 #include "interfaces.h"
+#include "fftw3.h"
 
 int main(int argc, char **argv)
 {

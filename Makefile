@@ -1,8 +1,11 @@
 # Setup for Intel oneAPI Toolkit + fftw
 export I_MPI_CC=icx
+export I_MPI_CXX=icpx
 CC=mpicc
+CXX=mpicxx
 CPP=cpp
 CFLAGS=-xHost -g -std=c99 -O3 -D_POSIX_C_SOURCE=200809L -qmkl=parallel -fiopenmp
+CXXFLAGS=-xHost -fsycl -g -O3 -qmkl=parallel -fiopenmp
 
 LAPACK_LIBS=-mkl
 LAPACK_LDFLAGS=
@@ -21,10 +24,10 @@ ifdef WITH_SCALAPACK
 endif
 
 
-CPPFLAGS=-I$(FFTW_ROOT)/include -I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
+CPPFLAGS=-I$(MKLROOT)/include/fftw -I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
 				 $(ELPA_CPPFLAGS)
-LDFLAGS=-L$(FFTW_ROOT)/lib $(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS) -fiopenmp
-LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3_mpi -lfftw3 -qmkl=parallel -lm -L${MKLROOT}/lib/intel64 -lpthread -lm -ldl
+LDFLAGS=$(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS) -fiopenmp
+LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -L${MKLROOT}/lib  -lmkl_sycl_blas -lmkl_sycl_lapack -lmkl_sycl_dft -lsycl -lfftw3x_cdft_lp64  -lmkl_cdft_core -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lmkl_blacs_intelmpi_lp64 -liomp5 -lpthread -lm -ldl
 
 TARGET=dftoy
 
@@ -32,6 +35,10 @@ SRCDIR=src
 OBJDIR=obj
 SRC=$(wildcard $(SRCDIR)/*.c)
 OBJ=$(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
+CPPSRCDIR=src/sycl
+CPPOBJDIR=obj
+CPPSRC=$(wildcard $(CPPSRCDIR)/*.cpp)
+CPPOBJ=$(CPPSRC:$(CPPSRCDIR)/%.cpp=$(CPPOBJDIR)/%.o)
 
 export CFLAGS
 export CPPFLAGS
@@ -43,11 +50,14 @@ TOYCODE_DIAG?=ZHEEVD
 
 all: $(TARGET)
 
-$(TARGET): solvers $(OBJ)
-	$(CC) -o $@ $(LDFLAGS) $(OBJDIR)/*.o $(LDLIBS)
+$(TARGET): solvers $(OBJ) $(CPPOBJ)
+	$(CXX) -fsycl -o $@ $(LDFLAGS) $(OBJDIR)/*.o $(LDLIBS)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(CPPOBJDIR)/%.o: $(CPPSRCDIR)/%.cpp | $(CPPOBJDIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR):
 	mkdir -p $@
