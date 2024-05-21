@@ -5,7 +5,7 @@ CC=mpicc
 CXX=mpicxx
 CPP=cpp
 CFLAGS=-xHost -g -std=c99 -O3 -D_POSIX_C_SOURCE=200809L -qmkl=parallel -fiopenmp
-CXXFLAGS=-xHost -fsycl -g -O3 -qmkl=parallel -fiopenmp
+CXXFLAGS=-xHost -std=c++20 -fsycl -g -O3 -qmkl=parallel -fiopenmp
 
 LAPACK_LIBS=-mkl
 LAPACK_LDFLAGS=

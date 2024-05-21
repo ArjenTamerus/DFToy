@@ -584,43 +584,11 @@ void sycl_apply_hamiltonian(int num_plane_waves, int num_states, std::complex<do
 	desc_2d.set_value(oneapi::mkl::dft::config_param::BWD_DISTANCE, num_plane_waves*num_plane_waves);
 	desc_2d.commit(q);
 
-	int nfftw[] = {num_plane_waves, num_plane_waves};
-	plan_forward_1d = fftw_plan_many_dft(
-			 1, &num_plane_waves, num_plane_waves*num_plane_waves,
-			 tsi, &num_plane_waves,
-			 1, num_plane_waves,
-			 ts, &num_plane_waves,
-			 1, num_plane_waves,
-			 FFTW_FORWARD, FFTW_ESTIMATE
-			 );
-
-	plan_forward_2d = fftw_plan_many_dft(
-			 2, nfftw, num_plane_waves,
-			 tsi, nfftw,
-			 1, num_plane_waves*num_plane_waves,
-			 ts, nfftw,
-			 1, num_plane_waves*num_plane_waves,
-			 FFTW_BACKWARD, FFTW_ESTIMATE
-			 );
-
-	plan_backward_1d = fftw_plan_many_dft(
-			 1, &num_plane_waves, num_plane_waves*num_plane_waves,
-			 tsi, &num_plane_waves,
-			 1, num_plane_waves,
-			 ts, &num_plane_waves,
-			 1, num_plane_waves,
-			 FFTW_BACKWARD, FFTW_ESTIMATE
-			 );
-
-	plan_backward_2d = fftw_plan_many_dft(
-			 2, nfftw, num_plane_waves,
-			 tsi, nfftw,
-			 1, num_plane_waves*num_plane_waves,
-			 ts, nfftw,
-			 1, num_plane_waves*num_plane_waves,
-			 FFTW_BACKWARD, FFTW_ESTIMATE
-			 );
-	
+	sycl::buffer<std::complex<double>> full_state_buf{state, num_pw_3d*num_states};
+	sycl::buffer<std::complex<double>> H_state_buf{H_state, num_pw_3d*num_states};
+	sycl::buffer<double> H_local_buf{H_local, num_pw_3d};
+	sycl::buffer<double> H_kinetic_buf{H_kinetic, num_pw_3d};
+	//sycl::host_accessor full_state_ha(full_state_buf);
 	////
 	//// V_nl - Calculate Beta [plane waves * m] from base state (e^-r)
 	//// by applying a different spherical harmonic for each m.
@@ -652,6 +620,7 @@ void sycl_apply_hamiltonian(int num_plane_waves, int num_states, std::complex<do
 	//			break;
 	//	}
 
+	
 	//	// Need to decide on _some_ number for the scale factor...
 	//	double scale = 1.0;
 	//	beta_apply_ylm(n, l, m, scale, num_plane_waves, nl_base_state, beta);
@@ -688,29 +657,39 @@ void sycl_apply_hamiltonian(int num_plane_waves, int num_states, std::complex<do
 
 		// Load wvfn at state/band ns into work array
 
-		for(np = 0; np < num_pw_3d; np++) {
-			tmp_state_in[np] = state[ns*num_pw_3d+np];
-		}
+		//for(np = 0; np < num_pw_3d; np++) {
+		//	tmp_state_in[np] = full_state_ha[ns*num_pw_3d+np];
+		//}
+		q.submit([&](sycl::handler &h) {
+					sycl::accessor full_state_a(full_state_buf, h, sycl::read_only);
+
+					h.parallel_for(sycl::range<1>(num_pw_3d), [=](sycl::id<1> i) {
+							tmp_state_in[i] = full_state_a[ns*num_pw_3d+i];
+							});
+
+					}).wait();
 
 		{
 		// Convert from reciprocal to real space
-		std::cout << "PRE : " << std::real(tmp_state[0]) << " " << std::real(tmp_state[num_pw_3d-1]) << std::endl;
 		oneapi::mkl::dft::compute_forward(desc_2d, tmp_state_in, tmp_state).wait();
-		std::cout << "DFTI: " << std::real(tmp_state[0]) << " " << std::real(tmp_state[num_pw_3d-1]) << std::endl;
-		fftw_execute_dft(plan_forward_2d, tsi, ts);
-		std::cout << "FFTW: " << std::real(tmp_state[0]) << " " << std::real(tmp_state[num_pw_3d-1]) << std::endl;
 		transpose_for_fftw(ts, tsi, 0,
 				num_plane_waves, num_plane_waves, XZ);
-		//auto event = oneapi::mkl::dft::compute_forward(desc_1d, tmp_state_in, tmp_state);
-		//event.wait();
 		oneapi::mkl::dft::compute_forward(desc_1d, tmp_state_in, tmp_state).wait();
-		//fftw_execute_dft(plan_forward_1d, tsi, ts);
 		}
 
 		// Apply local H in real space
-		for(np = 0; np < num_pw_3d; np++){
-			tmp_state_in[np] = H_local[np] * tmp_state[np]/(1.0*num_pw_3d);
-		}
+		//for(np = 0; np < num_pw_3d; np++){
+		//	tmp_state_in[np] = H_local[np] * tmp_state[np]/(1.0*num_pw_3d);
+		//}
+
+		q.submit([&](sycl::handler &h) {
+					sycl::accessor H_local_a(H_local_buf, h, sycl::read_only);
+
+					h.parallel_for(sycl::range<1>(num_pw_3d), [=](sycl::id<1> i) {
+							tmp_state_in[i] = H_local_a[i] *tmp_state[i]*(1.0/num_pw_3d);
+							});
+
+					}).wait();
 
 //		// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
 //		for (int m = 0; m < d_m; m++) {
@@ -743,20 +722,31 @@ void sycl_apply_hamiltonian(int num_plane_waves, int num_states, std::complex<do
 		// Convert back to reciprocal space
 		{
 		oneapi::mkl::dft::compute_backward(desc_1d, tmp_state_in, tmp_state).wait();
-		//fftw_execute_dft(plan_backward_1d, tsi, ts);
 		transpose_for_fftw(ts, tsi, 0,
 				num_plane_waves, num_plane_waves, XZ);
-		fftw_execute_dft(plan_backward_2d, tsi, ts);//&hs[ns*num_pw_3d]);
 		oneapi::mkl::dft::compute_backward(desc_2d, tmp_state_in, tmp_state).wait();
 		}
 
 
 		// Apply Kinetic H in reciprocal space
-		for(np = 0; np < num_pw_3d; np++) {
-			H_state[ns*num_pw_3d+np] = tmp_state[np] 
-				+ H_kinetic[np]*state[ns*num_pw_3d+np];
+		//for(np = 0; np < num_pw_3d; np++) {
+		//	H_state[ns*num_pw_3d+np] = tmp_state[np] 
+		//		+ H_kinetic[np]*state[ns*num_pw_3d+np];
+		//}
 			
-		}
+		q.submit([&](sycl::handler &h) {
+					sycl::accessor H_state_a(H_state_buf, h, sycl::read_write);
+					sycl::accessor full_state_a(full_state_buf, h, sycl::read_only);
+					sycl::accessor H_kinetic_a(H_kinetic_buf, h, sycl::read_only);
+
+					h.parallel_for(sycl::range<1>(num_pw_3d), [=](sycl::id<1> np) {
+							H_state_a[ns*num_pw_3d+np] = tmp_state[np] 
+					//	H_state [ns*num_pw_3d+np] = tmp_state[np] 
+								+ H_kinetic_a[np]*full_state_a[ns*num_pw_3d+np];
+					//		+ H_kinetic [np]*     state  [ns*num_pw_3d+np];
+							});
+
+					}).wait();
 
 	}
 
