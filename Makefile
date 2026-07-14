@@ -1,10 +1,11 @@
 # Setup for Intel oneAPI Toolkit + fftw
-export I_MPI_CC=icx
+#export I_MPI_CC=icx
 CC=mpicc
 CPP=cpp
-CFLAGS=-xHost -g -std=c99 -O3 -D_POSIX_C_SOURCE=200809L -qmkl=parallel -fiopenmp
+#CFLAGS=-xHost -g -std=c99 -D_POSIX_C_SOURCE=200809L -qmkl=parallel -fiopenmp
+CFLAGS=-march=native -std=c99 -g -D_POSIX_C_SOURCE=200809L
 
-LAPACK_LIBS=-mkl
+LAPACK_LIBS=-llapacke
 LAPACK_LDFLAGS=
 
 ifdef WITH_ELPA
@@ -23,8 +24,8 @@ endif
 
 CPPFLAGS=-I$(FFTW_ROOT)/include -I/usr/include/ -I./include $(SCALAPACK_CPPFLAGS) $(LAPACK_CPPFLAGS) \
 				 $(ELPA_CPPFLAGS)
-LDFLAGS=-L$(FFTW_ROOT)/lib $(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS) -fiopenmp
-LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3_mpi -lfftw3 -qmkl=parallel -lm -L${MKLROOT}/lib/intel64 -lpthread -lm -ldl
+LDFLAGS=-L$(FFTW_ROOT)/lib $(SCALAPACK_LDFLAGS) $(LAPACK_LDFLAGS) $(ELPA_LDFLAGS)
+LDLIBS=$(SCALAPACK_LIBS) $(LAPACK_LIBS) $(ELPA_LIBS) -lfftw3_mpi -lfftw3 -lm #-qmkl=parallel -lm -L${MKLROOT}/lib/intel64 -lpthread -lm -ldl
 
 TARGET=dftoy
 

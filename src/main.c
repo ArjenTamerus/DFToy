@@ -28,10 +28,15 @@ int main(int argc, char **argv)
 	init_parallel(argc, argv);
 
 	get_configuration_params(argc, argv, &params);
+	process_params(&params);
+	debug_print_params(&params);
 
 	num_wave_vectors = params.num_wave_vectors;
 	num_plane_waves = 2*num_wave_vectors+1;
 	num_pw_3d = num_plane_waves*num_plane_waves*num_plane_waves;
+
+	size_t grid_dim = params.grid_dim;//2*num_plane_waves;
+	size_t grid_3d = grid_dim*grid_dim*grid_dim;
 
 	num_states = params.num_states;
 
@@ -40,21 +45,25 @@ int main(int argc, char **argv)
 	mpi_printf("num_wave_vectors:\t%d\n", num_wave_vectors);
 	mpi_printf("num_plane_waves:\t%d\n", num_plane_waves);
 	mpi_printf("num_pw_3d:\t\t%d\n", num_pw_3d);
+	mpi_printf("grid dims:\t\t%llu^3\n", grid_dim);
 	mpi_printf("num_nl_states:\t%d\n", params.num_nl_states);
 
-	H_kinetic = calloc(num_pw_3d, sizeof(double));
-	H_local = calloc(num_pw_3d, sizeof(double));
+	//H_kinetic = calloc(num_pw_3d, sizeof(double));
+	//H_local = calloc(num_pw_3d, sizeof(double));
 	nonlocal_base_state = calloc(num_pw_3d, sizeof(double));
 
-	//if (par_root) {
-		init_kinetic(H_kinetic, num_plane_waves);
-		init_local(H_local, num_plane_waves);
-		init_nonlocal_base(nonlocal_base_state, num_plane_waves);
-	//}
+	H_kinetic = init_kinetic(&params);//H_kinetic, num_plane_waves, grid_dim);
+	H_local = init_local(&params);//H_local, num_plane_waves, grid_dim);
+	nonlocal_base_state = init_nonlocal_base(&params);//init_nonlocal_base(nonlocal_base_state, num_plane_waves);
+
+	if (!H_kinetic || !H_local) {
+		mpi_fail("Forcefield initialisation error");
+	}
 
 	if (params.run_exact_solver) {
-		full_H = exact_solver(num_plane_waves, num_states, H_kinetic, H_local,
-				params.exact_solver, params.keep_exact_solution); 
+		mpi_error("Exact solver disabled for now");
+		//full_H = exact_solver(num_plane_waves, num_states, H_kinetic, H_local,
+		//		params.exact_solver, params.keep_exact_solution); 
 	}
 
 	if (params.run_iterative_solver) {
@@ -80,13 +89,15 @@ int main(int argc, char **argv)
 }
 
 // Initialise Kinetic Energy part of the Hamiltonian (reciprocal space)
-void init_kinetic(double *H_kinetic, int num_plane_waves)
+double *init_kinetic(struct toycode_params *params)//double *H_kinetic, int num_plane_waves, size_t grid_dim)
 {
 	int x, y, z;
 	int idx, idy, idz;
 	int pos;
 
-	int wavevectors = (num_plane_waves-1)/2;
+	//int wavevectors = (num_plane_waves-1)/2;
+	
+	int64_t num_plane_waves = params->grid_dim;
 
 	mpi_printf("Initialising kinetic Hamiltonian...\n");
 
@@ -109,6 +120,8 @@ void init_kinetic(double *H_kinetic, int num_plane_waves)
 
 	//}
 
+	double *H_kinetic = calloc(params->grid_size, sizeof(double));
+
 	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
 		idz = z < 0 ? num_plane_waves+z : z;
 		for(y = -(num_plane_waves/2); y < num_plane_waves/2+1; y++) {
@@ -124,17 +137,20 @@ void init_kinetic(double *H_kinetic, int num_plane_waves)
 		}
 
 	}
+
+	return H_kinetic;
 }
 
 // Initialise Local Energy part of the Hamiltonian (real space)
-void init_local(double *H_local, int num_plane_waves)
+double *init_local(struct toycode_params *params)//double *H_local, int num_plane_waves, size_t grid_dim)
 {
 	int x, y, z;
 	int idx, idy, idz;
 	int pos;
 
-	int wavevectors = (num_plane_waves-1)/2;
-	int num_pw_3d = num_plane_waves*num_plane_waves*num_plane_waves;
+	int64_t num_plane_waves = params->grid_dim;
+	//int wavevectors = (num_plane_waves-1)/2;
+	//int num_pw_3d = num_plane_waves*num_plane_waves*num_plane_waves;
 
 	mpi_printf("Initialising local Hamiltonian...\n");
 
@@ -155,6 +171,8 @@ void init_local(double *H_local, int num_plane_waves)
 	//	}
 	//}
 
+	double *H_local = calloc(params->grid_size, sizeof(double));
+
 	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
 		idz = z < 0 ? num_plane_waves+z : z;
 		for(y = -(num_plane_waves/2); y < num_plane_waves/2+1; y++) {
@@ -166,21 +184,26 @@ void init_local(double *H_local, int num_plane_waves)
 					+ idx;
 
 
-				H_local[pos] = -0.37/(0.005 + fabs(sqrt(x*x+y*y+z*z)/num_pw_3d - 0.5));
+				H_local[pos] = -0.37/(0.005 + fabs(sqrt(x*x+y*y+z*z)/(params->grid_size) - 0.5));
 			}
 		}
 	}
+
+	return H_local;
 }
 
 // Initialise nonlocal energy in realspace, s0 only?
-void init_nonlocal_base(double *nonlocal_base_state, int num_plane_waves) {
+	double *init_nonlocal_base(struct toycode_params *params) {
 
 	int x, y, z;
 	int idx_, idy_, idz_;
 	int pos;
-	int wavevectors = (num_plane_waves-1)/2;
+	int64_t num_plane_waves = params->grid_dim;
+	int64_t wavevectors = (num_plane_waves-1)/2;
 
 	double r, r_square;
+
+	double *nonlocal_base_state = calloc(params->grid_size, sizeof(double));
 
 	for(z = -(num_plane_waves/2); z < num_plane_waves/2+1; z++) {
 		idz_ = z < 0 ? num_plane_waves+z : z;
@@ -202,5 +225,5 @@ void init_nonlocal_base(double *nonlocal_base_state, int num_plane_waves) {
 		//printf("\n");
 	}
 
-
+	return nonlocal_base_state;
 }

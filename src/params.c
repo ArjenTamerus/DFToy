@@ -10,10 +10,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
+#include <math.h>
 #include "parallel.h"
 #include "interfaces.h"
 
 struct option tc_params[] = {
+	{"cutoff", required_argument, NULL, 'c'},
 	{"wavevectors", required_argument, 0, 'w'},
 	{"states", required_argument, 0, 's'},
 	{"bands", required_argument, 0, 'b'}, // == states
@@ -25,7 +27,7 @@ struct option tc_params[] = {
 	{"help", no_argument, 0, 'h'},
 	{"usage", no_argument, 0, 'u'},
 	{"version", no_argument, 0, 'V'},
-	{0, 0, 0, 0}
+	{NULL, 0, NULL, 0}
 };
 
 void set_default_configuration_params(struct toycode_params *params)
@@ -34,11 +36,37 @@ void set_default_configuration_params(struct toycode_params *params)
 	params->num_states = 4;
 	params->num_nl_states = 1;
 
+	params->cutoff_energy = 1.0;
+	params->grid_scale = 1.75;
+
+	// non-compute params
+	params->kpoints = 1;
+	params->spins = 1;
+	params->is_gamma = false;
+	
+	// settings
 	params->run_exact_solver = false;
 	params->run_iterative_solver = true;
 	params->keep_exact_solution = false;
 
 	params->exact_solver = NULL;
+
+	// Use GPU? [future]
+	params->use_accelerator = false;
+}
+
+void set_double_param(double *param, const char *param_value,
+		const char *param_name)
+{
+	char *endptr = NULL;
+
+	*param = strtod(param_value, &endptr);
+
+	if (*param <= 0.0 || *endptr != '\0') {
+		mpi_error("Invalid value for parameter %s: %s (should be floating point)\n",
+				param_name, param_value);
+		mpi_fail("Exiting\n");
+	}
 }
 
 void set_int_param(long int *param, const char *param_value,
@@ -78,6 +106,10 @@ void get_configuration_params(int argc, char **argv,
 				set_int_param(&(params->num_states), optarg, "--bands [-b]");
 				break;
 
+			case 'c':
+				set_double_param(&(params->cutoff_energy), optarg, "--cutoff [-c]");
+				break;
+
 			case 'd':
 				set_debug_iterative = true;
 				break;
@@ -93,6 +125,10 @@ void get_configuration_params(int argc, char **argv,
 
 			case 'i':
 				set_run_iterative = true;
+				break;
+
+			case 'k':
+				set_int_param(&(params->kpoints), optarg, "--kpoints [-k]");
 				break;
 
 			case 'n':
@@ -216,7 +252,7 @@ void usage()
 			"DFToy version %s.\n\n"
 			"Usage:\n"
 			"mpirun -np <nprocs> dftoy <params>\n\n"
-			"Default settings are equivalent to <dftoy -e -i -w 3 -s 1>\n\n"
+			"Default settings are equivalent to <dftoy -i -w 12 -s 4 >\n\n"
 			"Optional parameters:\n\n"
 			" -d, --debug_iterative\n"
 			"            Debug iterative solver (forces -e -i).\n\n"
@@ -238,7 +274,11 @@ void usage()
 			" -w <n>, --wavevectors=<n>\n"
 			"            Set wavevector resolution to <n>.\n\n"
 			" -x <n>, --exact_solver=<solver>\n"
-			"            Calculate exact solution using <solver>.\n\n",
+			"            Calculate exact solution using <solver>.\n\n"
+			" -c <x.x>, --cutoff=<x.x>\n"
+			"            Set the cutoff energy.\n\n"
+			" -k <n>, --kpoints=<n>\n"
+			"            Number of K-points in calculation (only effective for predictions)\n",
 			get_version_string()
 		);
 
@@ -252,3 +292,26 @@ const char *get_version_string()
 {
 	return "0.1-unreleased";
 }
+
+void process_params(struct toycode_params *params) {
+	params->cutoff_radius = sqrt(2.0*params->cutoff_energy);
+
+	params->grid_xyz = ceil(params->grid_scale*params->cutoff_radius*10.26/CONST_PI);
+	params->grid_dim = 2*params->grid_xyz+1;
+	params->grid_size = pow(params->grid_dim, 3);
+
+	//TODO this is nonsense, but need to keep the code running for now
+	params->num_wave_vectors = ceil(params->cutoff_radius);
+}
+
+void debug_print_params(struct toycode_params *params) {
+	mpi_printf("Cutoff Energy:\t%f\n", params->cutoff_energy);
+	mpi_printf("Cutoff Radius:\t%f\n", params->cutoff_radius);
+	mpi_printf("Grid scale:\t%f\n", params->grid_scale);
+	mpi_printf("Grid XYZ:\t%d\n", params->grid_xyz);
+	mpi_printf("Grid dim:\t%d\n", params->grid_dim);
+	mpi_printf("Grid size:\t%d\n", params->grid_size);
+	mpi_printf("num_states:\t%d\n", params->num_states);
+	mpi_printf("num_nl_states:\t%d\n", params->num_nl_states);
+}
+

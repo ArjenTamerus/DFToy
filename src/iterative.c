@@ -39,8 +39,8 @@ void iterative_solver(struct toycode_params *params, double *global_H_kinetic,
 
 	// For now, set allocation size to be the same on each process.
 	// Less thinking/logic in the manual transpose
-	ptrdiff_t tmp_distr_npw_localsize = fftw_mpi_local_size_3d(num_plane_waves,
-			num_plane_waves, num_plane_waves, MPI_COMM_WORLD, &distr_local_n0,
+	ptrdiff_t tmp_distr_npw_localsize = fftw_mpi_local_size_3d(params->grid_dim,
+			params->grid_dim, params->grid_dim, MPI_COMM_WORLD, &distr_local_n0,
 			&distr_local_start);
 
 	MPI_Allreduce(&tmp_distr_npw_localsize, &distr_npw_localsize, 1, MPI_UINT64_T,
@@ -49,10 +49,10 @@ void iterative_solver(struct toycode_params *params, double *global_H_kinetic,
 	MPI_Allreduce(&distr_local_n0, &distr_max_n0, 1, MPI_UINT64_T,
 			MPI_MAX, MPI_COMM_WORLD);
 
-	distr_local_npw = distr_local_n0 * num_plane_waves * num_plane_waves;
+	distr_local_npw = distr_local_n0 * params->grid_dim * params->grid_dim;//params->num_plane_waves * num_plane_waves;
 
-	double *H_kinetic = &(global_H_kinetic[(distr_local_start)*num_plane_waves*num_plane_waves]);
-	double *H_local = &(global_H_local[(distr_local_start)*num_plane_waves*num_plane_waves]);
+	double *H_kinetic = &(global_H_kinetic[(distr_local_start)*params->grid_dim*params->grid_dim]);
+	double *H_local = &(global_H_local[(distr_local_start)*params->grid_dim*params->grid_dim]);
 	
 	mpi_printf("Starting iterative solver\n");
 
@@ -76,7 +76,7 @@ void iterative_solver(struct toycode_params *params, double *global_H_kinetic,
 	}
 	else {
 		// Actual iterative method: start with random guess for wavefunction
-		randomise_state(num_plane_waves, num_states, trial_wvfn);
+		randomise_state(params, trial_wvfn);
 	}
 
 	iterative_timer = create_timer("Iterative diagonalisation");
@@ -84,14 +84,14 @@ void iterative_solver(struct toycode_params *params, double *global_H_kinetic,
 
 	orthonormalise(distr_npw_localsize, num_states, trial_wvfn);
 
-	apply_hamiltonian(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
+	apply_hamiltonian(params, num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
 			nl_base_state, gradient);
 
 	calculate_eigenvalues(distr_npw_localsize, num_states, trial_wvfn, gradient,
 			eigenvalues);
 
 	//// Iterate to find true eigenstates
-	iterative_search(num_plane_waves, num_states, H_kinetic, H_local,
+	iterative_search(params, num_plane_waves, num_states, H_kinetic, H_local,
 			nl_base_state, trial_wvfn, gradient, rotation, eigenvalues);
 
 	// Rotate states to approach true eigenstates
@@ -112,9 +112,11 @@ void iterative_solver(struct toycode_params *params, double *global_H_kinetic,
 }
 
 // Guess a wavefunction: random but symmetric values (reciprocal space)
-void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
+void randomise_state(struct toycode_params *params, fftw_complex *state)
 {
 	double rnd1, rnd2;
+	int num_plane_waves = params->num_plane_waves;
+	int num_states = params->num_states;
 	int ns;
 	int num_pw_2d = num_plane_waves * num_plane_waves;
 	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
@@ -122,12 +124,13 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 	mpi_printf("Randomise state\n");
 
 	int x, y, z;
+	int outer_x, outer_y, outer_z;
 	int pos;
 	int offset, offset_ns;
 	fftw_complex rand_val;
 
 
-	fftw_complex *tmp_state = calloc(num_pw_3d*num_states,sizeof(fftw_complex));
+	fftw_complex *tmp_state = calloc(params->grid_size*num_states,sizeof(fftw_complex));
 
 	// [TODO FIX] Current implementation: calculate the entire state on each MPI
 	// process, then slice out our local state and discard the global state. This
@@ -139,36 +142,51 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 // yeah?
 //#pragma omp parallel for default(none) shared(num_states,num_plane_waves,num_pw_2d,num_pw_3d,state) private(ns,z,y,x,rnd1,rnd2,rand_val,pos,offset,offset_ns)
 	for (ns = 0; ns < num_states; ns++) {
-		offset_ns = ns * num_pw_3d;
+		offset_ns = ns * params->grid_size;
 
-		for(z = 0; z < num_plane_waves; z++) {
-			offset = offset_ns + z * num_plane_waves *num_plane_waves;
+		for(outer_z = 0; outer_z < params->grid_dim; outer_z++) {
+			//offset = offset_ns + z * params->grid_dim * params->grid_dim;
+			if(outer_z <= params->grid_dim/2) {
+				z = outer_z;
+			}
+			else {
+				z = outer_z - params->grid_dim;
+			}
 
-			for(y = 0; y < num_plane_waves/2+1; y++) {
+			for(outer_y = 0; outer_y < params->grid_dim; outer_y++) {
+				if(outer_y <= params->grid_dim/2) {
+					y = outer_y;
+				}
+				else {
+					y = outer_y - params->grid_dim;
+				}
+				srand(1337*(y+1));
 
-				for(x = 0; x < num_plane_waves/2+1; x++) {
+				for(x = 0; x < params->grid_dim; x++) {
 
-					rnd1 = random_double()-0.5;
-					if (x == 0 && y == 0 && z == 0) {
-						rnd2 = 0.0;
+					if(sqrt(x*x+y*y+z*z) <= num_plane_waves) {
+						rnd1 = random_double()-0.5;
+						if (x == 0 && y == 0 && z == 0) {
+							rnd2 = 0.0;
+						}
+						else {
+							rnd2 = random_double()-0.5;
+						}
+
+						rand_val = 2*(rnd1 + rnd2*I);
+
+						pos = outer_z*params->grid_dim*params->grid_dim + outer_y * params->grid_dim + x;
+						tmp_state[offset_ns+pos] = rand_val;
+
+						pos = (outer_z) * params->grid_dim*params->grid_dim + (outer_y+1) * params->grid_dim - x - 1;
+						tmp_state[offset_ns+pos] = conj(rand_val);
+
+						//pos = params->grid_size - ((outer_z+1)*params->grid_dim*params->grid_dim - (outer_y+1) * params->grid_dim - x);
+						//tmp_state[offset_ns+pos] = -rand_val;
+
+						//pos = params->grid_size - ((outer_z*params->grid_dim*params->grid_dim) + outer_y * params->grid_dim + x)-1;
+						//tmp_state[offset_ns+pos] = -conj(rand_val);
 					}
-					else {
-						rnd2 = random_double()-0.5;
-					}
-
-					rand_val = 2*(rnd1 + rnd2*I);
-
-					pos = y * num_plane_waves + x;
-					tmp_state[offset+pos] = rand_val;
-
-					pos = (y+1) * num_plane_waves - x - 1;
-					tmp_state[offset+pos] = conj(rand_val);
-
-					pos = num_pw_2d - ((y+1) * num_plane_waves - x);
-					tmp_state[offset+pos] = -rand_val;
-
-					pos = num_pw_2d - (y * num_plane_waves + x)-1;
-					tmp_state[offset+pos] = -conj(rand_val);
 				}
 
 			}
@@ -181,10 +199,10 @@ void randomise_state(int num_plane_waves, int num_states, fftw_complex *state)
 	// Copy our local portion of the global state before discarding global
 	for(ns = 0; ns < num_states; ns++) {
 		for(z = 0; z < distr_local_n0; z++) {
-			for(y = 0; y < num_plane_waves; y++) {
-				for(x = 0; x < num_plane_waves; x++) {
-					state[ns*distr_npw_localsize + z*num_plane_waves*num_plane_waves+y*num_plane_waves+x] =
-						tmp_state[ns*num_pw_3d + (z+distr_local_start)*num_plane_waves*num_plane_waves+y*num_plane_waves+x];
+			for(y = 0; y < params->grid_dim; y++) {
+				for(x = 0; x < params->grid_dim; x++) {
+					state[ns*distr_npw_localsize + z*params->grid_dim*params->grid_dim+y*params->grid_dim+x] =
+						tmp_state[ns*params->grid_dim + (z+distr_local_start)*params->grid_dim*params->grid_dim+y*params->grid_dim+x];
 				}
 			}
 		}
@@ -237,9 +255,10 @@ void orthonormalise(int num_plane_waves, int num_states, fftw_complex
 
 			overlap[ns2*num_states+ns1] = 0.0+0.0*I;
 
-//#pragma novector // Intel icx 2023.1 miscompiles this loop and throws around
-//								 // NaNs and Infinities for e.g. -w 5 -s 1 with -O2+ and AVX2.
-//								 // TODO Fix? Report? Ignore?
+#pragma novector // Intel icx 2023.1 miscompiles this loop and throws around
+								 // NaNs and Infinities for e.g. -w 5 -s 1 with -O2+ and AVX2.
+								 // TODO Fix? Report? Ignore?
+								 // NOTE still borked in 2024.1
 			for (pw = 0; pw < distr_local_npw; pw++) {
 				overlap[ns2*num_states+ns1] += conj(trial_wvfn[offset_ns1+pw])
 					* trial_wvfn[offset_ns2+pw];
@@ -512,7 +531,7 @@ void calc_beta_phi(double *beta, fftw_complex *state, fftw_complex *beta_phi,
 		int num_states, int num_plane_waves) {
 }
 
-void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
+void apply_hamiltonian(struct toycode_params *params, int num_plane_waves, int num_states, fftw_complex *state,
 		double *H_kinetic, double *H_local, double *nl_base_state,
 		fftw_complex *H_state)
 {
@@ -522,12 +541,12 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 	fftw_complex *tmp_state = NULL, *tmp_state_in = NULL;
 
 	int ns, np, x, y, z;
-	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
+	int num_pw_3d = params->grid_size;//num_plane_waves * num_plane_waves * num_plane_waves;
 
-	int n[] = {num_plane_waves, num_plane_waves};
+	int n[] = {params->grid_dim, params->grid_dim};
 
 	/* V_nl stuff */
-	int num_nl_states = 0;
+	int num_nl_states = params->num_nl_states;
 	int d_m = num_nl_states;
 	int d_n = num_nl_states;
 
@@ -545,38 +564,38 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 	/* end V_nl stuff */
 
 	plan_forward_1d = fftw_plan_many_dft(
-			 1, &num_plane_waves, distr_local_n0*num_plane_waves,
-			 tmp_state_in, &num_plane_waves,
-			 1, num_plane_waves,
-			 tmp_state, &num_plane_waves,
-			 1, num_plane_waves,
+			 1, &params->grid_dim, distr_local_n0*params->grid_dim,
+			 tmp_state_in, &params->grid_dim,
+			 1, params->grid_dim,
+			 tmp_state, &params->grid_dim,
+			 1, params->grid_dim,
 			 FFTW_FORWARD, FFTW_ESTIMATE
 			 );
 
 	plan_forward_2d = fftw_plan_many_dft(
 			 2, n, distr_local_n0,
 			 tmp_state_in, n,
-			 1, num_plane_waves*num_plane_waves,
+			 1, params->grid_dim*params->grid_dim,
 			 tmp_state, n,
-			 1, num_plane_waves*num_plane_waves,
+			 1, params->grid_dim*params->grid_dim,
 			 FFTW_BACKWARD, FFTW_ESTIMATE
 			 );
 
 	plan_backward_1d = fftw_plan_many_dft(
-			 1, &num_plane_waves, distr_local_n0*num_plane_waves,
-			 tmp_state_in, &num_plane_waves,
-			 1, num_plane_waves,
-			 tmp_state, &num_plane_waves,
-			 1, num_plane_waves,
+			 1, &params->grid_dim, distr_local_n0*params->grid_dim,
+			 tmp_state_in, &params->grid_dim,
+			 1, params->grid_dim,
+			 tmp_state, &params->grid_dim,
+			 1, params->grid_dim,
 			 FFTW_BACKWARD, FFTW_ESTIMATE
 			 );
 
 	plan_backward_2d = fftw_plan_many_dft(
 			 2, n, distr_local_n0,
 			 tmp_state_in, n,
-			 1, num_plane_waves*num_plane_waves,
+			 1, params->grid_dim*params->grid_dim,
 			 tmp_state, n,
-			 1, num_plane_waves*num_plane_waves,
+			 1, params->grid_dim*params->grid_dim,
 			 FFTW_BACKWARD, FFTW_ESTIMATE
 			 );
 
@@ -631,11 +650,11 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 
 
 	// Apply H (= K + V_loc + V_nl) to each state/band
-#pragma omp parallel default(none) shared(num_states,num_pw_3d,tmp_state,tmp_state_in, \
-		plan_forward_1d, plan_forward_2d, plan_backward_1d, plan_backward_2d, distr_local_start, \
-		distr_max_n0, distr_local_npw, num_plane_waves, H_local, H_kinetic, beta, beta_phi, \
-		d_beta, nl_d, H_state, d_m, d_n, distr_npw_localsize, state) \
-	private(np, m, n, ns,)
+//#pragma omp parallel default(none) shared(num_states,num_pw_3d,tmp_state,tmp_state_in, \
+//		plan_forward_1d, plan_forward_2d, plan_backward_1d, plan_backward_2d, distr_local_start, \
+//		distr_max_n0, distr_local_npw, num_plane_waves, H_local, H_kinetic, beta, beta_phi, \
+//		d_beta, nl_d, H_state, d_m, d_n, distr_npw_localsize, state) \
+//	private(np, m, n, ns,)
 	for(ns = 0; ns < num_states; ns++) {
 
 		//
@@ -655,28 +674,28 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 
 		// Load wvfn at state/band ns into work array
 
-#pragma omp for
+//#pragma omp for
 		for(np = 0; np < distr_local_npw; np++) {
 			tmp_state_in[np] = state[ns*distr_npw_localsize+np];
 		}
 
-#pragma omp single
+//#pragma omp single
 		{
 		// Convert from reciprocal to real space
 		fftw_execute_dft(plan_forward_2d, tmp_state_in, tmp_state);
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
-				distr_max_n0, num_plane_waves, XZ);
+				distr_max_n0, params->grid_dim, XZ);
 		fftw_execute_dft(plan_forward_1d, tmp_state_in, tmp_state);
 		}
 
 		// Apply local H in real space
-#pragma omp for
+//#pragma omp for
 		for(np = 0; np < distr_local_npw; np++){
 			tmp_state_in[np] = H_local[np] * tmp_state[np]/num_pw_3d;
 		}
 
-		// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
-#pragma omp for collapse(2)
+	// Calculate beta_phi, SUM_m(Beta<dagger>_G'm * Psi_G') ( note Phi == Psi )
+//#pragma omp for collapse(2)
 		for (int m = 0; m < d_m; m++) {
 			for(np = 0; np < distr_local_npw; np++) {
 				beta_phi[m*distr_local_npw+np] = 
@@ -685,7 +704,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Calculate d_beta (D * beta_phi)
-#pragma omp for collapse(3)
+//#pragma omp for collapse(3)
 		for (int m = 0; m < d_m; m++) {
 			for(int n = 0; n < d_n; n++) {
 				d_beta[m*d_m+n] = 0.0+0.0*I;
@@ -696,7 +715,7 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Apply V_nl in real space
-#pragma omp for collapse(3)
+//#pragma omp for collapse(3)
 		for (int n = 0; n < d_n; n++) {
 			for (int m = 0; m < d_m; m++) {
 				for(np = 0; np < distr_local_npw; np++) {
@@ -707,17 +726,17 @@ void apply_hamiltonian(int num_plane_waves, int num_states, fftw_complex *state,
 		}
 
 		// Convert back to reciprocal space
-#pragma omp single
+//#pragma omp single
 		{
 		fftw_execute_dft(plan_backward_1d, tmp_state_in, tmp_state);
 		transpose_for_fftw(tmp_state, tmp_state_in, distr_local_start,
-				distr_max_n0, num_plane_waves, XZ);
+				distr_max_n0, params->grid_dim, XZ);
 		fftw_execute_dft(plan_backward_2d, tmp_state_in, &H_state[ns*distr_npw_localsize]);
 		}
 
 
 		// Apply Kinetic H in reciprocal space
-#pragma omp for
+//#pragma omp for
 		for(np = 0; np < distr_local_npw; np++) {
 			H_state[ns*distr_npw_localsize+np] = H_state[ns*distr_npw_localsize+np] 
 				+ H_kinetic[np]*state[ns*distr_npw_localsize+np];
@@ -753,13 +772,13 @@ void init_seed()
 
 	if(!initialised) {
 		// TODO enable _actually random_ seed?
-		seed = 13377331;
+		seed = 12900394;//13377331;
 		srand(seed);
 		initialised = 1;
 	}
 }
 
-void line_search(int num_plane_waves ,int num_states,
+void line_search(struct toycode_params *params, int num_plane_waves ,int num_states,
 		fftw_complex *approx_state, double *H_kinetic, double *H_local,
 		double *nl_base_state,
 		fftw_complex *direction, fftw_complex *gradient, double *eigenvalue,
@@ -868,7 +887,7 @@ void line_search(int num_plane_waves ,int num_states,
 		orthonormalise(distr_npw_localsize,num_states,tmp_state);
 
 		// Apply the H to this state
-		apply_hamiltonian(num_plane_waves, num_states, tmp_state, H_kinetic,
+		apply_hamiltonian(params, num_plane_waves, num_states, tmp_state, H_kinetic,
 				H_local, nl_base_state, gradient);
 
 		// Compute the new energy estimate
@@ -960,7 +979,7 @@ void line_search(int num_plane_waves ,int num_states,
 	orthonormalise(distr_npw_localsize,num_states,approx_state);
 
 	// Apply the H to this state
-	apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,H_local,
+	apply_hamiltonian(params,num_plane_waves,num_states,approx_state,H_kinetic,H_local,
 			nl_base_state, gradient);
 
 	// Compute the new energy estimate
@@ -1005,7 +1024,7 @@ void line_search(int num_plane_waves ,int num_states,
 			orthonormalise(distr_npw_localsize,num_states,approx_state);
 
 			// Apply the H to this state
-			apply_hamiltonian(num_plane_waves,num_states,approx_state,H_kinetic,
+			apply_hamiltonian(params,num_plane_waves,num_states,approx_state,H_kinetic,
 					H_local, nl_base_state, gradient);
 
 			// Compute the new energy estimate
@@ -1077,7 +1096,7 @@ void calculate_eigenvalues(int num_plane_waves, int num_states,
 
 }
 
-void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
+void iterative_search(struct toycode_params *params, int num_plane_waves, int num_states, double *H_kinetic,
 		double *H_local, double *nl_base_state, fftw_complex *trial_wvfn,
 		fftw_complex *gradient, fftw_complex *rotation, double *eigenvalues)
 {
@@ -1091,11 +1110,11 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 	int CG_RESET=5;
 	double gamma, gTxg=0.0, gTxg_prev=1.0;
 	double previous_energy;
-	double energy_tolerance = 1.e-11;
+	double energy_tolerance = 1.e-7;
 
 	double total_energy = 0.;
 
-	int num_pw_3d = num_plane_waves * num_plane_waves * num_plane_waves;
+	//int num_pw_3d = params->grid_size;//num_plane_waves * num_plane_waves * num_plane_waves;
 
 	search_direction = calloc(distr_npw_localsize*num_states, sizeof(fftw_complex));
 	previous_search_direction = calloc(distr_npw_localsize*num_states,
@@ -1189,7 +1208,7 @@ void iterative_search(int num_plane_waves, int num_states, double *H_kinetic,
 
 		// Search along this direction for the best approx. eigenvectors, i.e. the
 		// lowest energy.
-		line_search(num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
+		line_search(params, num_plane_waves, num_states, trial_wvfn, H_kinetic, H_local,
 				nl_base_state, search_direction, gradient, eigenvalues, &total_energy);
 
 		if (check_convergence(previous_energy, total_energy, energy_tolerance)) {

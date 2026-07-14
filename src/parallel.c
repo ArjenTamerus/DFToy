@@ -223,5 +223,7 @@ void transpose_for_fftw(fftw_complex *in, fftw_complex *out,
 
 void omp_init()
 {
+#ifdef _OPENMP
 	num_omp_threads = omp_get_num_threads();
+#endif
 }
